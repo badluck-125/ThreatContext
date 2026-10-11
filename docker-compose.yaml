@@ -1,0 +1,57 @@
+services:
+    presentation_tier:
+        container_name: ThreatContext-front
+        image: httpd:2.4.68-trixie
+        ports:
+            - "8080:80"
+            - "8081:443"
+        networks:
+            - threatcontextLan
+        volumes:
+            - ./httpd.conf:/usr/local/apache2/conf/httpd.conf
+            - ./htdocs:/usr/local/apache2/htdocs
+
+    application_tier:
+        container_name:  ThreatContext-app
+        build:
+            context: ./context_php
+        ports:
+            - "8090:80"
+        volumes:
+            - ./php_scripts:/var/www/html
+        networks:
+            - threatcontextLan
+
+    database_tier:
+        container_name: ThreatContext-db
+        image: postgres:18-trixie
+        environment:
+            POSTGRES_USER: threatcontext-user
+            POSTGRES_PASSWORD: REMOVED
+            POSTGRES_DB: threatcontext_db
+        volumes:
+            - ./seed.sql:/docker-entrypoint-initdb.d/seed.sql
+        ports:
+            - "5432:5432"
+        networks:
+            - threatcontextLan
+
+    llm_tier:
+        container_name: ThreatContext-llm
+        image: docker.io/ollama/ollama:latest
+        ports:
+            - "1134:1134"
+        networks:
+            - threatcontextLan
+        deploy:
+            resources:
+                reservations:
+                    devices:
+                    - driver: nvidia
+                      count: all
+                      capabilities: [gpu]
+
+networks:
+    threatcontextLan:
+        name: threatcontextLan
+        driver: bridge
