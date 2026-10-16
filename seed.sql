@@ -26,8 +26,8 @@
 CREATE TABLE tab_cve (
     id            SERIAL PRIMARY KEY,
     cve_id        TEXT   NOT NULL UNIQUE,   -- e.g. 'CVE-2024-1234'
-    exploit_id    INT    NOT NULL,
-    ioc_id        INT    NOT NULL,
+    exploit_id    INT DEFAULT 0,
+    ioc_id        INT DEFAULT 0,
     platform      TEXT   NOT NULL,          -- platform name (string per XML)
     date_added    DATE   NOT NULL DEFAULT CURRENT_DATE,
     date_modified DATE   NOT NULL DEFAULT CURRENT_DATE
