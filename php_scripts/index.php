@@ -91,7 +91,7 @@ function require_fields(array $data, array $fields): void
  * Request routing
  * ============================================================ */
 $method = $_SERVER['REQUEST_METHOD'];
-$path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
+$path   = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 // Accept both /cve-entry and /index.php/cve-entry (no rewrite needed)
 if (str_starts_with($path, '/index.php')) {
     $path = substr($path, strlen('/index.php'));
@@ -109,24 +109,30 @@ switch ($path) {
      * POST /cve-entry  -> tab_cve
      * Expected JSON:
      *   { "cve_id": "...", "exploit_id": 1, "ioc_id": 1,
-     *     "platform": "linux_web" }
+     *     "platform": "linux_web", "cve_source": "..." }
      * date_added / date_modified default to today.
+     * cve_source is optional; defaults to 'unprovided' in DB.
      * -------------------------------------------------------- */
     case '/cve-entry':
         $data = get_json_body();
-        require_fields($data, ['cve_id', 'exploit_id', 'ioc_id', 'platform']);
+        require_fields($data, ['cve_id', 'platform']);
+        // exploit_id / ioc_id nullable since seed.sql gives them DEFAULT 0
+        $exploit_id = isset($data['exploit_id']) ? (int) $data['exploit_id'] : 0;
+        $ioc_id     = isset($data['ioc_id'])     ? (int) $data['ioc_id']     : 0;
+        $cve_source = $data['cve_source'] ?? 'unprovided';
 
         $stmt = db()->prepare(
-            'INSERT INTO tab_cve (cve_id, exploit_id, ioc_id, platform)
-             VALUES (:cve_id, :exploit_id, :ioc_id, :platform)
-             RETURNING id, cve_id, exploit_id, ioc_id, platform, date_added, date_modified'
+            'INSERT INTO tab_cve (cve_id, exploit_id, ioc_id, platform, cve_source)
+        VALUES (:cve_id, :exploit_id, :ioc_id, :platform, :cve_source)
+        RETURNING id, cve_id, exploit_id, ioc_id, platform, cve_source, date_added, date_modified'
         );
         try {
             $stmt->execute([
                 ':cve_id'     => $data['cve_id'],
-                ':exploit_id' => (int) $data['exploit_id'],
-                ':ioc_id'     => (int) $data['ioc_id'],
+                ':exploit_id' => $exploit_id,
+                ':ioc_id'     => $ioc_id,
                 ':platform'   => $data['platform'],
+                ':cve_source' => $cve_source,
             ]);
         } catch (PDOException $e) {
             if ($e->getCode() === '23505') { // unique_violation
@@ -138,75 +144,81 @@ switch ($path) {
         json_response(201, ['ok' => true, 'created' => $stmt->fetch()]);
         break;
 
-    /* --------------------------------------------------------
-     * POST /exploit-entry  -> tab_exploit
-     * Expected JSON:
-     *   { "exploit_id": 1, "exploit_type": "...",
-     *     "exploit_content": "..." }
-     * -------------------------------------------------------- */
-    case '/exploit-entry':
-        $data = get_json_body();
-        require_fields($data, ['exploit_id', 'exploit_type', 'exploit_content']);
+        /* --------------------------------------------------------
+         * POST /exploit-entry  -> tab_exploit
+         * Expected JSON:
+         *   { "exploit_id": 1, "exploit_type": "...",
+         *     "exploit_content": "...", "exploit_source": "..." }
+         * exploit_source is optional; defaults to 'unprovided' in DB.
+         * -------------------------------------------------------- */
+        case '/exploit-entry':
+            $data = get_json_body();
+            require_fields($data, ['exploit_id', 'exploit_type', 'exploit_content']);
+            $exploit_source = $data['exploit_source'] ?? 'unprovided';
 
-        $stmt = db()->prepare(
-            'INSERT INTO tab_exploit (exploit_id, exploit_type, exploit_content)
-             VALUES (:exploit_id, :exploit_type, :exploit_content)
-             RETURNING id, exploit_id, exploit_type, date_added, date_modified'
-        );
-        try {
-            $stmt->execute([
-                ':exploit_id'      => (int) $data['exploit_id'],
-                ':exploit_type'    => $data['exploit_type'],
-                ':exploit_content' => $data['exploit_content'],
-            ]);
-        } catch (PDOException $e) {
-            if ($e->getCode() === '23505') {
-                fail(409, 'Duplicate exploit_id: ' . $data['exploit_id']);
+            $stmt = db()->prepare(
+                'INSERT INTO tab_exploit (exploit_id, exploit_type, exploit_content, exploit_source)
+            VALUES (:exploit_id, :exploit_type, :exploit_content, :exploit_source)
+            RETURNING id, exploit_id, exploit_type, exploit_source, date_added, date_modified'
+            );
+            try {
+                $stmt->execute([
+                    ':exploit_id'      => (int) $data['exploit_id'],
+                               ':exploit_type'    => $data['exploit_type'],
+                               ':exploit_content' => $data['exploit_content'],
+                               ':exploit_source'  => $exploit_source,
+                ]);
+            } catch (PDOException $e) {
+                if ($e->getCode() === '23505') {
+                    fail(409, 'Duplicate exploit_id: ' . $data['exploit_id']);
+                }
+                fail(500, 'Insert failed: ' . $e->getMessage());
             }
-            fail(500, 'Insert failed: ' . $e->getMessage());
-        }
 
-        json_response(201, ['ok' => true, 'created' => $stmt->fetch()]);
-        break;
+            json_response(201, ['ok' => true, 'created' => $stmt->fetch()]);
+            break;
 
-    /* --------------------------------------------------------
-     * POST /sample-entry  -> tab_sample
-     * Expected JSON:
-     *   { "platform": "linux_web", "title": "...",
-     *     "sample_content": "...",
-     *     "point_of_interest": { ... } }   // optional
-     * -------------------------------------------------------- */
-    case '/sample-entry':
-        $data = get_json_body();
-        require_fields($data, ['platform', 'title', 'sample_content']);
+            /* --------------------------------------------------------
+             * POST /sample-entry  -> tab_sample
+             * Expected JSON:
+             *   { "platform": "linux_web", "title": "...",
+             *     "sample_content": "...",
+             *     "point_of_interest": { ... },   // optional
+             *     "sample_source": "..." }        // optional, default 'unprovided'
+             * -------------------------------------------------------- */
+            case '/sample-entry':
+                $data = get_json_body();
+                require_fields($data, ['platform', 'title', 'sample_content']);
+                $sample_source = $data['sample_source'] ?? 'unprovided';
 
-        $poi = $data['point_of_interest'] ?? null;
-        if ($poi !== null && !is_array($poi)) {
-            fail(422, 'point_of_interest must be a JSON object.');
-        }
+                $poi = $data['point_of_interest'] ?? null;
+                if ($poi !== null && !is_array($poi)) {
+                    fail(422, 'point_of_interest must be a JSON object.');
+                }
 
-        $stmt = db()->prepare(
-            'INSERT INTO tab_sample (platform, title, point_of_interest, sample_content)
-             VALUES (:platform, :title, CAST(:poi AS JSONB), :sample_content)
-             RETURNING id, platform, title, date_added, date_modified'
-        );
-        try {
-            $stmt->execute([
-                ':platform'       => $data['platform'],
-                ':title'          => $data['title'],
-                ':poi'            => $poi === null ? null : json_encode($poi),
-                ':sample_content' => $data['sample_content'],
-            ]);
-        } catch (PDOException $e) {
-            if ($e->getCode() === '22P02') { // invalid_jsonb / syntax error
-                fail(422, 'point_of_interest is not valid JSON.');
-            }
-            fail(500, 'Insert failed: ' . $e->getMessage());
-        }
+                $stmt = db()->prepare(
+                    'INSERT INTO tab_sample (platform, title, point_of_interest, sample_content, sample_source)
+                VALUES (:platform, :title, CAST(:poi AS JSONB), :sample_content, :sample_source)
+                RETURNING id, platform, title, sample_source, date_added, date_modified'
+                );
+                try {
+                    $stmt->execute([
+                        ':platform'       => $data['platform'],
+                        ':title'          => $data['title'],
+                        ':poi'            => $poi === null ? null : json_encode($poi),
+                        ':sample_content' => $data['sample_content'],
+                        ':sample_source'  => $sample_source,
+                    ]);
+                } catch (PDOException $e) {
+                    if ($e->getCode() === '22P02') { // invalid_jsonb / syntax error
+                        fail(422, 'point_of_interest is not valid JSON.');
+                    }
+                    fail(500, 'Insert failed: ' . $e->getMessage());
+                }
 
-        json_response(201, ['ok' => true, 'created' => $stmt->fetch()]);
-        break;
+                json_response(201, ['ok' => true, 'created' => $stmt->fetch()]);
+                break;
 
-    default:
-        fail(404, 'Unknown endpoint: ' . $path);
+            default:
+                fail(404, 'Unknown endpoint: ' . $path);
 }
