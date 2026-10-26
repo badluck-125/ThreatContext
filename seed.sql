@@ -25,11 +25,11 @@
 -- ------------------------------------------------------------
 CREATE TABLE tab_cve (
     id            SERIAL PRIMARY KEY,
-    cve_id        TEXT   NOT NULL UNIQUE,   -- e.g. 'CVE-2024-1234'
+    cve_id        TEXT   NOT NULL,   -- e.g. 'CVE-2024-1234'
     exploit_id    INT DEFAULT 0,
     ioc_id        INT DEFAULT 0,
     platform      TEXT   NOT NULL,          -- platform name (string per XML)
-    cve_source        STRING NOT NULL DEFAULT "unprovided",
+    cve_source    TEXT NOT NULL DEFAULT 'unprovided',
     date_added    DATE   NOT NULL DEFAULT CURRENT_DATE,
     date_modified DATE   NOT NULL DEFAULT CURRENT_DATE
 );
@@ -39,7 +39,7 @@ CREATE TABLE tab_exploit (
     exploit_id      INT    NOT NULL UNIQUE,
     exploit_type    TEXT   NOT NULL,        -- e.g. 'remote', 'local', 'dos', 'sql_injection'
     exploit_content TEXT   NOT NULL,        -- exploit source / description (largestring)
-    exploit_source  STRING NOT NULL DEFAULT "unprovided",
+    exploit_source  TEXT NOT NULL DEFAULT 'unprovided',
     date_added      DATE   NOT NULL DEFAULT CURRENT_DATE,
     date_modified   DATE   NOT NULL DEFAULT CURRENT_DATE
 );
@@ -50,7 +50,7 @@ CREATE TABLE tab_sample (
     title             TEXT  NOT NULL,
     point_of_interest JSONB,                -- JSON column per XML
     sample_content    TEXT  NOT NULL,       -- raw log sample (largestring)
-    sample_source     STRING NOT NULL DEFAULT "unprovided",
+    sample_source     TEXT NOT NULL DEFAULT 'unprovided',
     date_added        DATE  NOT NULL DEFAULT CURRENT_DATE,
     date_modified    DATE  NOT NULL DEFAULT CURRENT_DATE
 );
@@ -66,7 +66,7 @@ CREATE TABLE tab_ioc (
 CREATE TABLE tab_lexic (
     id            SERIAL PRIMARY KEY,
     category      TEXT NOT NULL,
-    value         TEXT NOT NULL,
+    value         TEXT NOT NULL
 );
 
 -- ------------------------------------------------------------

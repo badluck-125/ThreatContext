@@ -1,0 +1,11 @@
+{
+        "platform":"php",
+        "title":"JSON log of sending data on a webserver",
+        "point_of_interest": [ "ip_address","http_useragent","host","http_version","http_method","http_path","http_referer","status_code","ssl_protocol","ssl_cipher"],
+        "source":"User produced",
+        "sample_content": "
+            {"timestamp": "2026-09-27T12:26:59+02:00","client_ip": "172.24.1.32","request_id": "1febac26a81fb6591ba88847fe0c3f59","ssl_protocol": "TLSv1.3","ssl_cipher": "TLS_AES_256_GCM_SHA384","protocol": "HTTP/1.1","host": "nextcloud.tinker.lan","http_method": "POST","http_path": "/apps/text/session/11/sync","http_referer": "","status_code": "200","bytes_sent": "350","user_agent": "Mozilla/5.0 (X11; Linux x86_64; rv:140.0) Gecko/20100101 Firefox/140.0"},
+            {"timestamp": "2026-09-27T12:27:02+02:00","client_ip": "172.24.1.32","request_id": "f2cd6c1d3fa5db49be9583eb61c85a63","ssl_protocol": "TLSv1.3","ssl_cipher": "TLS_AES_256_GCM_SHA384","protocol":  "HTTP/1.1","host": "nextcloud.tinker.lan","http_method": "PUT","http_path": "/remote.php/dav/files/web-admin/Documents/missile_square.blend","http_referer": "","status_code": "413","bytes_sent": "183","user_agent": "Mozilla/5.0 (X11; Linux x86_64; rv:140.0) Gecko/20100101 Firefox/140.0"},
+            {"timestamp": "2026-09-27T12:27:09+02:00","client_ip": "172.24.1.32","request_id": "e56883dac92abfb56cabaa7b98dc7853","ssl_protocol": "TLSv1.3","ssl_cipher": "TLS_AES_256_GCM_SHA384","protocol": "HTTP/1.1","host": "nextcloud.tinker.lan","http_method": "POST","http_path": "/apps/text/session/11/sync","http_referer": "","status_code": "200","bytes_sent": "350","user_agent": "Mozilla/5.0 (X11; Linux x86_64; rv:140.0) Gecko/20100101 Firefox/140.0"}
+            "
+}
