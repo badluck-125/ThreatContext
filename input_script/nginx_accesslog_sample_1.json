@@ -1,0 +1,12 @@
+{
+        "platform":"linux",
+        "title":"Sample test",
+        "point_of_interest":  ["ip_address http_useragent host http_version http_method http_path http_referer status_code ssl_protocol ssl_cipher"],
+        "sample_content": [
+            {"timestamp": "2026-09-27T12:26:35+02:00","client_ip": "172.24.1.32","request_id": "75359d85602cc0a6b0c7b21230d4d21a","ssl_protocol": "TLSv1.3","ssl_cipher": "TLS_AES_256_GCM_SHA384","protocol": "HTTP/1.1","host": "nextcloud.tinker.lan","http_method": "GET","http_path": "/login","http_referer": "","status_code": "303","bytes_sent": "0","user_agent": "Mozilla/5.0 (X11; Linux x86_64; rv:140.0) Gecko/20100101 Firefox/140.0"},
+            {"timestamp": "2026-09-27T12:26:35+02:00","client_ip": "172.24.1.32","request_id": "3d44beb32d08374a81f7e18d900847ce","ssl_protocol": "TLSv1.3","ssl_cipher": "TLS_AES_256_GCM_SHA384","protocol": "HTTP/1.1","host": "nextcloud.tinker.lan","http_method": "GET","http_path": "/apps/dashboard/","http_referer": "","status_code": "200","bytes_sent": "14365","user_agent": "Mozilla/5.0 (X11; Linux x86_64; rv:140.0) Gecko/20100101 Firefox/140.0"},
+            {"timestamp": "2026-09-27T12:26:35+02:00","client_ip": "172.24.1.32","request_id": "fa68486406e5048c45d4387aa4fb7e17","ssl_protocol": "TLSv1.3","ssl_cipher": "TLS_AES_256_GCM_SHA384","protocol": "HTTP/1.1","host": "nextcloud.tinker.lan","http_method": "GET","http_path": "/dist/files_sharing-main.js","http_referer": "","status_code": "499","bytes_sent": "0","user_agent": "Mozilla/5.0 (X11; Linux x86_64; rv:140.0) Gecko/20100101 Firefox/140.0"},
+            {"timestamp": "2026-09-27T12:26:36+02:00","client_ip": "172.24.1.32","request_id": "d81cb2a17b7abc35e5cfe38109760108","ssl_protocol": "TLSv1.3","ssl_cipher": "TLS_AES_256_GCM_SHA384","protocol": "HTTP/1.1","host": "nextcloud.tinker.lan","http_method": "PROPFIND","http_path": "/remote.php/dav/files/web-admin/","http_referer": "","status_code": "207","bytes_sent": "531","user_agent": "Mozilla/5.0 (X11; Linux x86_64; rv:140.0) Gecko/20100101 Firefox/140.0"}
+        ],
+        "sample_source":"User produced"
+}

@@ -14,7 +14,7 @@ services:
     application_tier:
         container_name:  ThreatContext-app
         build:
-            context: ./context_php
+            context: ./context_threatcontext-app
         ports:
             - "8090:80"
         volumes:
@@ -31,6 +31,7 @@ services:
             POSTGRES_DB: threatcontext_db
         volumes:
             - ./seed.sql:/docker-entrypoint-initdb.d/seed.sql
+            - ./postgres-data:/var/lib/postgresql
         ports:
             - "5432:5432"
         networks:
@@ -39,8 +40,14 @@ services:
     llm_tier:
         container_name: ThreatContext-llm
         image: docker.io/ollama/ollama:latest
+        environment:
+            - OLLAMA_FLASH_ATTENTION=1
+            - OLLAMA_KV_CACHE_TYPE=q8_0
+            - OLLAMA_CONTEXT_LENGTH=16384
         ports:
-            - "1134:1134"
+            - "11434:11434"
+        volumes:
+            - ./ollama_models:/root/.ollama
         networks:
             - threatcontextLan
         deploy:
