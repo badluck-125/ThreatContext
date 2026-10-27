@@ -15,6 +15,10 @@ services:
         container_name:  ThreatContext-app
         build:
             context: ./context_threatcontext-app
+        environment:
+            DB_DSN:  'pgsql:host=database_tier;port=5432;dbname=${POSTGRES_DB}'
+            DB_USER: ${POSTGRES_USER}
+            DB_PASS: ${POSTGRES_PASSWORD}
         ports:
             - "8090:80"
         volumes:
@@ -26,9 +30,9 @@ services:
         container_name: ThreatContext-db
         image: postgres:18-trixie
         environment:
-            POSTGRES_USER: threatcontext-user
-            POSTGRES_PASSWORD: REMOVED
-            POSTGRES_DB: threatcontext_db
+            POSTGRES_USER: ${POSTGRES_USER}
+            POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+            POSTGRES_DB: ${POSTGRES_DB}
         volumes:
             - ./seed.sql:/docker-entrypoint-initdb.d/seed.sql
             - ./volume_threatcontext-db_database:/var/lib/postgresql

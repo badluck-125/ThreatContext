@@ -25,8 +25,10 @@ declare(strict_types=1);
  * (matches docker-compose service name & credentials)
  * ============================================================ */
 const DB_DSN  = 'pgsql:host=database_tier;port=5432;dbname=threatcontext_db';
-const DB_USER = 'threatcontext-user';
-const DB_PASS = 'REMOVED';
+// replaced by getenv():
+$dbDsn  = getenv('DB_DSN')  ?: 'pgsql:host=database_tier;port=5432;dbname=threatcontext_db';
+$dbUser = getenv('DB_USER') ?: 'threatcontext-user';
+$dbPass = getenv('DB_PASS') ?: '';
 
 /* ============================================================
  * Helpers
