@@ -8,11 +8,11 @@ This project rely on a 3-tier + LLM architecture
 Features OK
 * ExploitDB input script to feed its data to ThreatContext database
 * DockerCompose and DockerFile infrastructure layer
+* API script to input log sample data in threatcontext-db for tab_sample
+* RAG application to guess IoC based on exploit and log samples
 
 Features to add
-1. API script to input log sample data in threatcontext-db for tab_sample
-2. Build the RAG application to retrieve IoC based on exploit + log samples
-2. Web interface to input/consult exploit+cve data in threatcontext-db for tab_cve and tab_exploit
-3. Web interface to input/consult log sample data in threatcontext-db for tab_sample
+1. Web interface to input/consult exploit+cve data in threatcontext-db for tab_cve and tab_exploit
+2. Web interface to input/consult log sample data in threatcontext-db for tab_sample
 3. Web interface to prompt threatcontext
 
