@@ -1,0 +1,5 @@
+--bronze: #C98429ff;
+--tropical-mint: #54F0AFff;
+--rusty-spice: #B24C2Bff;
+--golden-apricot: #D98B29ff;
+--oxblood: #9B0106ff;

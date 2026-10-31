@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <link rel="stylesheet" href="styles.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ThreatContext-cve</title>
+
+</head>
+<header>
+    <div class="container">
+        <h1>ThreatContext</h1>
+        <h2 class="content">CVE entry</h2>
+        <p class="content">Input CVE in ThreatContext</p>
+    </div>
+    <nav >
+        <a class="content" href="/entry-cve.html"> CVE </a> |
+        <a class="content" href="/entry-exploit.html"> Exploit </a> |
+        <a class="content" href="/entry-ioc.html"> IoC </a> |
+        <a class="content" href="/entry-sample.html"> Sample </a>
+    </nav>
+</header>
+
+<body>
+    <div class="container">
+        <form class="contact-form">
+            <label class="content" for="cve_id">cve_id</label>
+            <input type="text" id="cve_id" name="cve_id" placeholder="CVE-1999-0007" required>
+
+            <label class="content" for="exploit_id">exploit_id</label>
+            <input type="text" id="exploit_id" name="exploit_id" placeholder="0001">
+
+            <label class="content" for="ioc_id">ioc_id</label>
+            <input type="text" id="ioc_id" name="ioc_id" placeholder="0001">
+
+            <label class="content" for="platform">platform</label>
+            <input type="text" id="platform" name="platform" placeholder="linux_x86-64, php" required>
+
+            <button type="submit">Send</button>
+        </form>
+    </div>
+</body>
+
+<footer>
+    <nav>
+        <a class="content" href="/index.html">Home</a> |
+        <a class="content" href="https://github.com/badluck-125/ThreatContext/tree/main">GitHub</a>
+    </nav>
+</footer>
+
+</html>

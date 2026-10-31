@@ -1,0 +1,72 @@
+services:
+    presentation_tier:
+        container_name: ThreatContext-front
+        image: httpd:2.4.68-trixie
+        ports:
+            - "8080:80"
+            - "8081:443"
+        networks:
+            - threatcontextLan
+        volumes:
+            - ./httpd.conf:/usr/local/apache2/conf/httpd.conf
+            - ./volume_threatcontext-front_htdocs:/usr/local/apache2/htdocs
+
+    application_tier:
+        container_name:  ThreatContext-app
+        build:
+            context: ./context_threatcontext-app
+        environment:
+            DB_DSN:  'pgsql:host=database_tier;port=5432;dbname=${POSTGRES_DB}'
+            DB_USER: ${POSTGRES_USER}
+            DB_PASS: ${POSTGRES_PASSWORD}
+        ports:
+            - "8090:80"
+        volumes:
+            - ./volume_threatcontext-app_php:/var/www/html
+        networks:
+            - threatcontextLan
+
+    database_tier:
+        container_name: ThreatContext-db
+        image: postgres:18-trixie
+        environment:
+            POSTGRES_USER: ${POSTGRES_USER}
+            POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+            POSTGRES_DB: ${POSTGRES_DB}
+        volumes:
+            - ./seed.sql:/docker-entrypoint-initdb.d/seed.sql
+            - ./volume_threatcontext-db_database:/var/lib/postgresql
+        ports:
+            - "5432:5432"
+        networks:
+            - threatcontextLan
+
+    llm_tier:
+        container_name: ThreatContext-llm
+        image: docker.io/ollama/ollama:latest
+        environment:
+            - OLLAMA_FLASH_ATTENTION=1
+            - OLLAMA_KV_CACHE_TYPE=q8_0
+            - OLLAMA_CONTEXT_LENGTH=16384
+        ports:
+            - "11434:11434"
+        volumes:
+            - ./volume_threatcontext-llm_model:/root/.ollama
+            - ./Modelfile:/root/.ollama/Modelfile
+        networks:
+            - threatcontextLan
+        post_start:
+            - command: ollama create threatcontext-analyst -f /root/.ollama/Modelfile
+
+        deploy:
+            resources:
+                reservations:
+                    devices:
+                    - driver: nvidia
+                      count: all
+                      capabilities: [gpu]
+
+networks:
+    threatcontextLan:
+        name: threatcontextLan
+        driver: bridge
