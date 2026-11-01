@@ -10,6 +10,7 @@
  *   POST /cve-entry      -> INSERT INTO tab_cve
  *   POST /exploit-entry  -> INSERT INTO tab_exploit
  *   POST /sample-entry   -> INSERT INTO tab_sample
+ *   POST /ioc-entry      -> INSERT INTO tab_ioc (manual ingestion)
  *   POST /ioc-request    -> full pipeline (steps 1-7):
  *                           CVE -> exploit + samples -> RAG build
  *                           -> ThreatContext-llm -> tab_ioc + tab_cve link
@@ -461,6 +462,42 @@ switch ($path) {
                         'cve_id'    => $cve_id,
                         'ioc_id'    => $ioc_id,
                     ]);
+                    break;
+
+                /* ========================================================
+                 * POST /ioc-entry — manual IoC ingestion -> tab_ioc
+                 * Expected JSON:
+                 *   { "ioc_id": 1, "ioc_type": "ip", "ioc_content": "6.6.6.6" }
+                 * ioc_type + ioc_content are stored as one JSON bundle in
+                 * tab_ioc.ioc_content (same shape the /ioc-request
+                 * pipeline stores for LLM-found IoCs).
+                 * ======================================================== */
+                case '/ioc-entry':
+                    if ($method !== 'POST') { fail(405, 'Use POST.'); }
+                    $data = get_json_body();
+                    require_fields($data, ['ioc_id', 'ioc_type', 'ioc_content']);
+
+                    $stmt = db()->prepare(
+                        'INSERT INTO tab_ioc (ioc_id, ioc_content)
+                     VALUES (:ioc_id, :ioc_content)
+                     RETURNING id, ioc_id, ioc_content, date_added, date_modified'
+                    );
+                    try {
+                        $stmt->execute([
+                            ':ioc_id'      => (int) $data['ioc_id'],
+                            ':ioc_content' => json_encode(
+                                ['ioc_type' => $data['ioc_type'], 'ioc_content' => $data['ioc_content']],
+                                JSON_UNESCAPED_SLASHES
+                            ),
+                        ]);
+                    } catch (PDOException $e) {
+                        if ($e->getCode() === '23505') {
+                            fail(409, 'Duplicate ioc_id: ' . $data['ioc_id']);
+                        }
+                        fail(500, 'Insert failed: ' . $e->getMessage());
+                    }
+
+                    json_response(201, ['ok' => true, 'created' => $stmt->fetch()]);
                     break;
 
                     default:
