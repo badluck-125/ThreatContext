@@ -1,120 +1,183 @@
+/* ThreatContext — presentation tier stylesheet.
+ * Layout modeled on the BasicWeb-app reference (light, centered
+ * card container, simple form styling) with the ThreatContext
+ * palette (see note.txt) as accents.
+ */
+
+:root {
+    --bronze:          #C98429;
+    --tropical-mint:   #54F0AF;
+    --rusty-spice:     #B24C2B;
+    --golden-apricot:  #D98B29;
+    --oxblood:         #9B0106;
+    --bg:              #f9f9f9;
+    --card:            #ffffff;
+    --text:            #333333;
+    --muted:           #777777;
+    --border:          #dddddd;
+}
+
 body {
-    background-color: #000000;
-    background-image: url("threatcontext-background.jpg");
+    font-family: Arial, sans-serif;
+    background-color: var(--bg);
+    color: var(--text);
+    margin: 0;
+    padding: 0;
+}
 
-    color: #54F0AFff;
-
+.container {
+    width: 60%;
+    min-width: 480px;
+    margin: 30px auto;
+    background: var(--card);
+    padding: 20px;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+    border-radius: 8px;
 }
 
 h1 {
-    font-family: "Monaco", sans-serif ;
-    color: #C98429ff;
-    opacity: 1;
-}
-
-nav {
-    background-color: rgba(178, 76, 43, 0.5);
     text-align: center;
-    width: 50%;
-
-    margin-left: 25%;
-    margin-top: 5px;
-    margin-bottom: 5px;
-
-    padding: 5px;
+    margin: 0;
+    color: var(--rusty-spice);
 }
 
-a:hover {
-    background-color: #13856e;
-    padding:2px;
+.tagline {
+    text-align: center;
+    color: var(--muted);
+    margin: 4px 0 16px;
 }
 
-div.container {
-    background-color: rgba(178, 76, 43, 0.5);
-
-    position: static;
-    width: 50%;
-    margin-left: 25%;
-    margin-top:5%;
-    padding: 5px;
+.main-nav {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px 14px;
+    margin-top: 12px;
 }
 
-.content {
-    font-family: "Monaco", sans-serif;
-    color: #54F0AFff;
-    opacity: 1;
+.main-nav a {
+    color: var(--bronze);
     text-decoration: none;
+    font-size: 14px;
 }
 
-
-.contact-form {
-    display: grid;
-    gap: 1rem;
-    padding: 2rem;
-    border-radius: 12px;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.1);
-    width: 100%;
-    max-width: 600px;
+.main-nav a:hover {
+    text-decoration: underline;
+    color: var(--rusty-spice);
 }
 
-.contact-form label {
-    font-weight: 600;
-    color: #54F0AFff;
+h2 {
+    text-align: center;
 }
 
-.contact-form input,
-.contact-form textarea {
-    width: calc(100% - 1.6rem - 2px);
-    padding: 5px;
-    border: 1px solid rgba(178, 76, 43);
+.page-info {
+    text-align: center;
+    color: var(--muted);
+}
+
+/* ---- forms ---- */
+
+.api-form {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-width: 520px;
+    margin: 0 auto 20px;
+}
+
+.api-form label {
+    font-size: 14px;
+    margin-top: 8px;
+}
+
+.optional {
+    color: var(--muted);
+    font-style: italic;
+}
+
+.api-form input,
+.api-form textarea {
+    padding: 10px;
+    border: 1px solid #ccc;
     border-radius: 4px;
-    font-size: 1rem;
-    background-color: #C98429ff;
+    font: inherit;
 }
 
-.contact-form button {
-    grid-column: 1 / -1;
-    background-color: #54F0AFff;
-
-    padding: 5px;
+.api-form button {
+    margin-top: 16px;
+    padding: 10px 20px;
+    background-color: var(--golden-apricot);
+    color: #ffffff;
     border: none;
     border-radius: 4px;
-    font-size: 1rem;
     cursor: pointer;
-    transition: background-color 0.3s;
 }
 
-.contact-form button:hover {
-    background-color: #13856e;
+.api-form button:hover {
+    background-color: var(--rusty-spice);
 }
 
-@media (min-width: 700px) {
-    .contact-form {
-        grid-template-columns: 150px 1fr;
-    }
-
-    .contact-form label[for="message"],
-    .contact-form textarea,
-    .contact-form button {
-        grid-column: 1 / -1;
-    }
+.api-form button:disabled {
+    opacity: 0.6;
+    cursor: wait;
 }
 
-/* ===== API result box (entry forms) ===== */
-#form-result {
-    text-align: left;
-    white-space: pre-wrap;
-    background: rgba(0, 0, 0, 0.35);
-    padding: 1em;
+/* ---- status messages ---- */
+
+.status-message {
+    text-align: center;
+    min-height: 1.2em;
+    color: var(--muted);
+    margin: 10px 0;
+}
+
+.status-message.success { color: #1e7e34; }
+.status-message.error   { color: var(--oxblood); }
+
+/* ---- results ---- */
+
+.json-box {
+    background: #2d2d2d;
+    color: #d4d4d4;
+    padding: 12px;
     border-radius: 6px;
-    margin-top: 1em;
     overflow-x: auto;
-    min-height: 1em;
-    font-family: monospace;
+    white-space: pre-wrap;
+    font-size: 13px;
+    margin: 10px 0;
 }
-#form-result.form-success {
-    border-left: 4px solid var(--tropical-mint, #54F0AF);
+
+.record-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 10px 0 24px;
 }
-#form-result.form-error {
-    border-left: 4px solid var(--oxblood, #9B0106);
+
+.record-table th {
+    text-align: left;
+    width: 160px;
+    padding: 8px 10px;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
 }
+
+.record-table td {
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border);
+    overflow-wrap: anywhere;
+}
+
+.record-table td.wrap { white-space: pre-wrap; }
+
+/* ---- footer ---- */
+
+.site-footer .container {
+    box-shadow: none;
+    text-align: center;
+    color: var(--muted);
+    font-size: 13px;
+    padding: 10px;
+}
+
+.site-footer a { color: var(--bronze); }

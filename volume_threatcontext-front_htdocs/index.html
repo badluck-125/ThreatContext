@@ -1,39 +1,49 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <link rel="stylesheet" href="styles.css">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ThreatContext</title>
-
+    <title>ThreatContext — CVE to IoC pipeline</title>
+    <link rel="stylesheet" href="/styles.css">
 </head>
-<header>
-
-    <div class="container">
-        <h1>ThreatContext</h1>
-        <p class="content">CVE to IoC pipeline</p>
-    </div>
-    <nav>
-        <a class="content" href="/entry-cve.html"> Input data </a> |
-        <a class="content" href="/consult-cve.html"> Consult data </a>
-    </nav>
-</header>
-
 <body>
-    <div class="container">
-        <form class="contact-form">
-            <label class="content" for="cve_id">Nom</label>
-            <input type="text" id="cve_id" name="cve_id" placeholder="CVE-1999-0007" required>
-            <button type="submit">Send</button>
+    <header class="site-header">
+        <div class="container">
+            <h1>ThreatContext</h1>
+            <p class="tagline">CVE &rarr; IoC pipeline</p>
+            <nav class="main-nav">
+                <a href="/">Home</a>
+                <a href="/cve-entry.html">Enter CVE</a>
+                <a href="/exploit-entry.html">Enter Exploit</a>
+                <a href="/sample-entry.html">Enter Sample</a>
+                <a href="/ioc-entry.html">Enter IoC</a>
+                <a href="/cve-consult.html">Consult CVE</a>
+                <a href="/exploit-consult.html">Consult Exploit</a>
+                <a href="/sample-consult.html">Consult Sample</a>
+                <a href="/ioc-consult.html">Consult IoC</a>
+            </nav>
+        </div>
+    </header>
+
+    <main class="container">
+        <h2>CVE to IoC pipeline</h2>
+        <p class="page-info">Enter a CVE identifier to run the local pipeline: exploit and log samples are retrieved, sent to ThreatContext-llm, and the found IoCs are stored.</p>
+        <form class="api-form" data-entry-endpoint="ioc-request" data-field-map='{"cve_id":"request"}'>
+            <label for="cve_id">cve_id</label>
+            <input type="text" id="cve_id" name="cve_id" placeholder="CVE-2026-109618" required>
+
+            <button type="submit">Find IoC</button>
         </form>
-    </div>
+        <div id="status-message" class="status-message" aria-live="polite"></div>
+        <div id="result" class="result"></div>
+    </main>
+
+    <footer class="site-footer">
+        <div class="container">
+            <a href="https://github.com/badluck-125/ThreatContext">GitHub</a>
+        </div>
+    </footer>
+
+    <script src="/threatcontext.js"></script>
 </body>
-
-<footer>
-    <nav class="low-menu">
-        <a class="content" href="/index.html">Home</a> |
-        <a class="content" href="https://github.com/badluck-125/ThreatContext/tree/main">GitHub</a>
-    </nav>
-</footer>
-
 </html>

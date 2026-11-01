@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ThreatContext — IoC consult</title>
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+    <header class="site-header">
+        <div class="container">
+            <h1>ThreatContext</h1>
+            <p class="tagline">CVE &rarr; IoC pipeline</p>
+            <nav class="main-nav">
+                <a href="/">Home</a>
+                <a href="/cve-entry.html">Enter CVE</a>
+                <a href="/exploit-entry.html">Enter Exploit</a>
+                <a href="/sample-entry.html">Enter Sample</a>
+                <a href="/ioc-entry.html">Enter IoC</a>
+                <a href="/cve-consult.html">Consult CVE</a>
+                <a href="/exploit-consult.html">Consult Exploit</a>
+                <a href="/sample-consult.html">Consult Sample</a>
+                <a href="/ioc-consult.html">Consult IoC</a>
+            </nav>
+        </div>
+    </header>
+
+    <main class="container">
+        <h2>IoC consult</h2>
+        <p class="page-info">Look up a stored IoC bundle by its identifier.</p>
+        <form class="api-form" data-consult-endpoint="ioc-consult" data-record-key="ioc">
+            <label for="ioc_id">ioc_id</label>
+            <input type="number" id="ioc_id" name="ioc_id" placeholder="0001" required>
+
+            <button type="submit">Search</button>
+        </form>
+        <div id="status-message" class="status-message" aria-live="polite"></div>
+        <div id="result" class="result"></div>
+    </main>
+
+    <footer class="site-footer">
+        <div class="container">
+            <a href="https://github.com/badluck-125/ThreatContext">GitHub</a>
+        </div>
+    </footer>
+
+    <script src="/threatcontext.js"></script>
+</body>
+</html>
