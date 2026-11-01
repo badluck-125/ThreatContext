@@ -99,3 +99,22 @@ div.container {
         grid-column: 1 / -1;
     }
 }
+
+/* ===== API result box (entry forms) ===== */
+#form-result {
+    text-align: left;
+    white-space: pre-wrap;
+    background: rgba(0, 0, 0, 0.35);
+    padding: 1em;
+    border-radius: 6px;
+    margin-top: 1em;
+    overflow-x: auto;
+    min-height: 1em;
+    font-family: monospace;
+}
+#form-result.form-success {
+    border-left: 4px solid var(--tropical-mint, #54F0AF);
+}
+#form-result.form-error {
+    border-left: 4px solid var(--oxblood, #9B0106);
+}

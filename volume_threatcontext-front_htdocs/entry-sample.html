@@ -23,7 +23,7 @@
 
 <body>
     <div class="container">
-        <form class="contact-form">
+        <form class="contact-form" data-endpoint="sample-entry">
             <label class="content" for="platform">Platform</label>
             <input type="text" id="platform" name="platform" placeholder="linux_x86-64, php" required>
 
@@ -39,6 +39,8 @@
 
             <button type="submit">Send</button>
         </form>
+
+        <pre id="form-result" class="content"></pre>
     </div>
 </body>
 
@@ -48,5 +50,7 @@
         <a class="content" href="https://github.com/badluck-125/ThreatContext/tree/main">GitHub</a>
     </nav>
 </footer>
+
+<script src="/form-submit.js"></script>
 
 </html>
