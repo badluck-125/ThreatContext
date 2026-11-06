@@ -15,9 +15,9 @@
  *                           CVE -> exploit + samples -> RAG build
  *                           -> ThreatContext-llm -> tab_ioc + tab_cve link
  *   GET  /cve-consult     -> consult tab_cve (all records, or one by cve_id)
- *   GET  /exploit-consult -> consult tab_exploit by exploit_id
- *   GET  /sample-consult  -> consult tab_sample by platform
- *   GET  /ioc-consult     -> consult tab_ioc by ioc_id
+ *   GET  /exploit-consult -> consult tab_exploit (all records, or one by exploit_id)
+ *   GET  /sample-consult  -> consult tab_sample (all records, or all by platform)
+ *   GET  /ioc-consult     -> consult tab_ioc (all records, or one by ioc_id)
  *
  * /ioc-request body: {"request": "CVE-2026-109618"}
  *   (GET /index.php/ioc-request?request=CVE-... also accepted for tests)
@@ -537,12 +537,26 @@ switch ($path) {
                     break;
 
                 /* ========================================================
-                 * GET /exploit-consult — consult an exploit by identifier
-                 * Query: ?exploit_id=317
+                 * GET /exploit-consult — consult tab_exploit
+                 * Without query: every registered exploit. The listing
+                 * omits exploit_content to keep the payloads light on
+                 * both the application and presentation tiers.
+                 * With ?exploit_id=317: only that record (full content).
                  * ======================================================== */
                 case '/exploit-consult':
                     if ($method !== 'GET') { fail(405, 'Use GET.'); }
                     $exploit_id = $_GET['exploit_id'] ?? '';
+                    if ($exploit_id === '') {
+                        // No filter given: every registered exploit,
+                        // without exploit_content (light listing).
+                        $rows = db()->query(
+                            'SELECT exploit_id, exploit_type, exploit_source,
+                                    date_added, date_modified
+                             FROM tab_exploit
+                             ORDER BY exploit_id'
+                        )->fetchAll();
+                        json_response(200, ['ok' => true, 'exploit' => $rows]);
+                    }
                     if (!ctype_digit((string) $exploit_id)) {
                         fail(422, 'Missing or invalid parameter: exploit_id');
                     }
@@ -561,26 +575,33 @@ switch ($path) {
                     break;
 
                 /* ========================================================
-                 * GET /sample-consult — consult samples by platform
-                 * Query: ?platform=linux_x86-64
-                 * Returns every tab_sample record for the platform
-                 * (may be an empty list).
+                 * GET /sample-consult — consult tab_sample
+                 * Without query: every registered sample.
+                 * With ?platform=linux_x86-64: only that platform's
+                 * samples (may be an empty list).
                  * ======================================================== */
                 case '/sample-consult':
                     if ($method !== 'GET') { fail(405, 'Use GET.'); }
                     $platform = $_GET['platform'] ?? '';
                     if ($platform === '') {
-                        fail(422, 'Missing required parameter: platform');
+                        // No filter given: every registered sample.
+                        $samples = db()->query(
+                            'SELECT platform, title, point_of_interest, sample_content,
+                                    sample_source, date_added, date_modified
+                             FROM tab_sample
+                             ORDER BY platform, date_added DESC'
+                        )->fetchAll();
+                    } else {
+                        $stmt = db()->prepare(
+                            'SELECT platform, title, point_of_interest, sample_content,
+                                    sample_source, date_added, date_modified
+                             FROM tab_sample
+                             WHERE platform = :platform
+                             ORDER BY date_added DESC'
+                        );
+                        $stmt->execute([':platform' => $platform]);
+                        $samples = $stmt->fetchAll();
                     }
-                    $stmt = db()->prepare(
-                        'SELECT platform, title, point_of_interest, sample_content,
-                                sample_source, date_added, date_modified
-                         FROM tab_sample
-                         WHERE platform = :platform
-                         ORDER BY date_added DESC'
-                    );
-                    $stmt->execute([':platform' => $platform]);
-                    $samples = $stmt->fetchAll();
                     // Decode the JSONB column so the presentation tier
                     // receives a JSON object, not a string.
                     foreach ($samples as &$s) {
@@ -593,8 +614,9 @@ switch ($path) {
                     break;
 
                 /* ========================================================
-                 * GET /ioc-consult — consult an IoC bundle by identifier
-                 * Query: ?ioc_id=1
+                 * GET /ioc-consult — consult tab_ioc
+                 * Without query: every stored IoC bundle.
+                 * With ?ioc_id=1: only that bundle.
                  * tab_ioc.ioc_content stores a JSON bundle:
                  *  - manual entries (/ioc-entry): {"ioc_type", "ioc_content"}
                  *  - pipeline bundles (/ioc-request): {"cve_id", "ioc_found"}
@@ -603,31 +625,47 @@ switch ($path) {
                 case '/ioc-consult':
                     if ($method !== 'GET') { fail(405, 'Use GET.'); }
                     $ioc_id = $_GET['ioc_id'] ?? '';
-                    if (!ctype_digit((string) $ioc_id)) {
-                        fail(422, 'Missing or invalid parameter: ioc_id');
-                    }
-                    $stmt = db()->prepare(
-                        'SELECT ioc_id, ioc_content, date_added, date_modified
-                         FROM tab_ioc
-                         WHERE ioc_id = :ioc_id'
-                    );
-                    $stmt->execute([':ioc_id' => (int) $ioc_id]);
-                    $ioc = $stmt->fetch();
-                    if ($ioc === false) {
-                        fail(404, 'Unknown ioc_id: ' . $ioc_id);
-                    }
-                    $bundle = json_decode((string) $ioc['ioc_content'], true);
-                    if (is_array($bundle) && isset($bundle['ioc_type'], $bundle['ioc_content'])) {
-                        $ioc['ioc_type']    = $bundle['ioc_type'];
-                        $ioc['ioc_content'] = $bundle['ioc_content'];
-                    } elseif (is_array($bundle) && isset($bundle['ioc_found'])) {
-                        $ioc['ioc_type']    = 'pipeline';
-                        $ioc['ioc_content'] = $bundle['ioc_found'];
+                    if ($ioc_id === '') {
+                        // No filter given: every stored IoC bundle.
+                        $iocs = db()->query(
+                            'SELECT ioc_id, ioc_content, date_added, date_modified
+                             FROM tab_ioc
+                             ORDER BY ioc_id'
+                        )->fetchAll();
                     } else {
-                        $ioc['ioc_type']    = '';
-                        $ioc['ioc_content'] = (string) $ioc['ioc_content'];
+                        if (!ctype_digit((string) $ioc_id)) {
+                            fail(422, 'Missing or invalid parameter: ioc_id');
+                        }
+                        $stmt = db()->prepare(
+                            'SELECT ioc_id, ioc_content, date_added, date_modified
+                             FROM tab_ioc
+                             WHERE ioc_id = :ioc_id'
+                        );
+                        $stmt->execute([':ioc_id' => (int) $ioc_id]);
+                        $iocs = $stmt->fetchAll();
+                        if (count($iocs) === 0) {
+                            fail(404, 'Unknown ioc_id: ' . $ioc_id);
+                        }
                     }
-                    json_response(200, ['ok' => true, 'ioc' => $ioc]);
+                    // Decode each JSON bundle so the presentation tier
+                    // receives JSON objects, not strings.
+                    foreach ($iocs as &$ioc) {
+                        $bundle = json_decode((string) $ioc['ioc_content'], true);
+                        if (is_array($bundle) && isset($bundle['ioc_type'], $bundle['ioc_content'])) {
+                            $ioc['ioc_type']    = $bundle['ioc_type'];
+                            $ioc['ioc_content'] = $bundle['ioc_content'];
+                        } elseif (is_array($bundle) && isset($bundle['ioc_found'])) {
+                            $ioc['ioc_type']    = 'pipeline';
+                            $ioc['ioc_content'] = $bundle['ioc_found'];
+                        } else {
+                            $ioc['ioc_type']    = '';
+                            $ioc['ioc_content'] = (string) $ioc['ioc_content'];
+                        }
+                    }
+                    unset($ioc);
+                    // A filtered lookup keeps the historic single-record
+                    // shape; the full listing returns an array.
+                    json_response(200, ['ok' => true, 'ioc' => ($ioc_id === '' ? $iocs : $iocs[0])]);
                     break;
 
                     default:
