@@ -14,7 +14,7 @@
  *   POST /ioc-request    -> full pipeline (steps 1-7):
  *                           CVE -> exploit + samples -> RAG build
  *                           -> ThreatContext-llm -> tab_ioc + tab_cve link
- *   GET  /cve-consult     -> consult tab_cve by cve_id
+ *   GET  /cve-consult     -> consult tab_cve (all records, or one by cve_id)
  *   GET  /exploit-consult -> consult tab_exploit by exploit_id
  *   GET  /sample-consult  -> consult tab_sample by platform
  *   GET  /ioc-consult     -> consult tab_ioc by ioc_id
@@ -505,15 +505,22 @@ switch ($path) {
                     break;
 
                 /* ========================================================
-                 * GET /cve-consult — consult a CVE by its identifier
-                 * Query: ?cve_id=CVE-2026-109618
-                 * Returns the full tab_cve record.
+                 * GET /cve-consult — consult tab_cve
+                 * Without query: every registered CVE.
+                 * With ?cve_id=CVE-2026-109618: only that record.
                  * ======================================================== */
                 case '/cve-consult':
                     if ($method !== 'GET') { fail(405, 'Use GET.'); }
                     $cve_id = $_GET['cve_id'] ?? '';
                     if ($cve_id === '') {
-                        fail(422, 'Missing required parameter: cve_id');
+                        // No filter given: return every registered CVE.
+                        $rows = db()->query(
+                            'SELECT cve_id, exploit_id, ioc_id, platform, cve_source,
+                                    date_added, date_modified
+                             FROM tab_cve
+                             ORDER BY cve_id'
+                        )->fetchAll();
+                        json_response(200, ['ok' => true, 'cve' => $rows]);
                     }
                     $stmt = db()->prepare(
                         'SELECT cve_id, exploit_id, ioc_id, platform, cve_source,
