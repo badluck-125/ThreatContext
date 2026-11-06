@@ -131,17 +131,12 @@
         var result = $('result');
         var button = form.querySelector('button[type="submit"]');
 
-        form.addEventListener('submit', function (e) {
-            e.preventDefault();
+        /* One search = one GET on the consult endpoint. With a query
+         * it narrows to the requested reference; without a query the
+         * endpoint returns every record of the linked table. */
+        function run(query) {
             result.innerHTML = '';
-
-            var params = [];
-            new FormData(form).forEach(function (value, key) {
-                if (value !== '') {
-                    params.push(encodeURIComponent(key) + '=' + encodeURIComponent(value));
-                }
-            });
-            var path = form.dataset.consultEndpoint + (params.length ? '?' + params.join('&') : '');
+            var path = form.dataset.consultEndpoint + (query ? '?' + query : '');
 
             setStatus(status, 'Searching...', '');
             button.disabled = true;
@@ -169,7 +164,24 @@
             }).finally(function () {
                 button.disabled = false;
             });
+        }
+
+        form.addEventListener('submit', function (e) {
+            e.preventDefault();
+            var params = [];
+            new FormData(form).forEach(function (value, key) {
+                if (value !== '') {
+                    params.push(encodeURIComponent(key) + '=' + encodeURIComponent(value));
+                }
+            });
+            run(params.join('&'));
         });
+
+        // data-load-all="true": list the whole linked table when the
+        // page opens, before the user searches for a reference.
+        if (form.dataset.loadAll === 'true') {
+            run('');
+        }
     }
 
     document.addEventListener('DOMContentLoaded', function () {
