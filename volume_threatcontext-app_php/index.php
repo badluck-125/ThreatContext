@@ -112,6 +112,17 @@ function db(): PDO
     return $pdo;
 }
 
+/* Next free identifier for a table: value just after the last stored
+ * one (MAX + 1, or 1 on an empty table). Used when an entry arrives
+ * without an id, from either the presentation tier or a remote
+ * application posting straight to this API. The table and column
+ * names only ever come from hard-coded call sites. */
+function next_id(string $table, string $column): int
+{
+    $stmt  = db()->query("SELECT COALESCE(MAX({$column}), 0) + 1 FROM {$table}");
+    return (int) $stmt->fetchColumn();
+}
+
 function require_fields(array $data, array $fields): void
 {
     $missing = [];
@@ -260,14 +271,20 @@ switch ($path) {
         /* --------------------------------------------------------
          * POST /exploit-entry  -> tab_exploit
          * Expected JSON:
-         *   { "exploit_id": 1, "exploit_type": "...",
-         *     "exploit_content": "...", "exploit_source": "..." }
+         *   { "exploit_type": "...", "exploit_content": "...",
+         *     "exploit_source": "..." }
+         * exploit_id is optional: when absent, empty or null the next
+         * free value (last stored + 1) is attributed automatically.
          * exploit_source is optional; defaults to 'unprovided' in DB.
          * -------------------------------------------------------- */
         case '/exploit-entry':
             if ($method !== 'POST') { fail(405, 'Use POST.'); }
             $data = get_json_body();
-            require_fields($data, ['exploit_id', 'exploit_type', 'exploit_content']);
+            require_fields($data, ['exploit_type', 'exploit_content']);
+            // No exploit_id given: attribute the next free value.
+            $exploit_id = (isset($data['exploit_id']) && $data['exploit_id'] !== '' && $data['exploit_id'] !== null)
+                ? (int) $data['exploit_id']
+                : next_id('tab_exploit', 'exploit_id');
             $exploit_source = $data['exploit_source'] ?? 'unprovided';
 
             $stmt = db()->prepare(
@@ -277,14 +294,14 @@ switch ($path) {
             );
             try {
                 $stmt->execute([
-                    ':exploit_id'      => (int) $data['exploit_id'],
+                    ':exploit_id'      => $exploit_id,
                                ':exploit_type'    => $data['exploit_type'],
                                ':exploit_content' => $data['exploit_content'],
                                ':exploit_source'  => $exploit_source,
                 ]);
             } catch (PDOException $e) {
                 if ($e->getCode() === '23505') {
-                    fail(409, 'Duplicate exploit_id: ' . $data['exploit_id']);
+                    fail(409, 'Duplicate exploit_id: ' . $exploit_id);
                 }
                 fail(500, 'Insert failed: ' . $e->getMessage());
             }
@@ -431,9 +448,7 @@ switch ($path) {
                     try {
                         db()->beginTransaction();
 
-                        $ioc_id = (int) db()
-                        ->query('SELECT COALESCE(MAX(ioc_id), 0) + 1 FROM tab_ioc')
-                        ->fetchColumn();
+                        $ioc_id = next_id('tab_ioc', 'ioc_id');
 
                         $ins = db()->prepare(
                             'INSERT INTO tab_ioc (ioc_id, ioc_content)
@@ -471,7 +486,10 @@ switch ($path) {
                 /* ========================================================
                  * POST /ioc-entry — manual IoC ingestion -> tab_ioc
                  * Expected JSON:
-                 *   { "ioc_id": 1, "ioc_type": "ip", "ioc_content": "6.6.6.6" }
+                 *   { "ioc_type": "ip", "ioc_content": "6.6.6.6" }
+                 * ioc_id is optional: when absent, empty or null the next
+                 * free value (last stored + 1) is attributed automatically,
+                 * exactly like the /ioc-request pipeline does.
                  * ioc_type + ioc_content are stored as one JSON bundle in
                  * tab_ioc.ioc_content (same shape the /ioc-request
                  * pipeline stores for LLM-found IoCs).
@@ -479,7 +497,11 @@ switch ($path) {
                 case '/ioc-entry':
                     if ($method !== 'POST') { fail(405, 'Use POST.'); }
                     $data = get_json_body();
-                    require_fields($data, ['ioc_id', 'ioc_type', 'ioc_content']);
+                    require_fields($data, ['ioc_type', 'ioc_content']);
+                    // No ioc_id given: attribute the next free value.
+                    $ioc_id = (isset($data['ioc_id']) && $data['ioc_id'] !== '' && $data['ioc_id'] !== null)
+                        ? (int) $data['ioc_id']
+                        : next_id('tab_ioc', 'ioc_id');
 
                     $stmt = db()->prepare(
                         'INSERT INTO tab_ioc (ioc_id, ioc_content)
@@ -488,7 +510,7 @@ switch ($path) {
                     );
                     try {
                         $stmt->execute([
-                            ':ioc_id'      => (int) $data['ioc_id'],
+                            ':ioc_id'      => $ioc_id,
                             ':ioc_content' => json_encode(
                                 ['ioc_type' => $data['ioc_type'], 'ioc_content' => $data['ioc_content']],
                                 JSON_UNESCAPED_SLASHES
@@ -496,7 +518,7 @@ switch ($path) {
                         ]);
                     } catch (PDOException $e) {
                         if ($e->getCode() === '23505') {
-                            fail(409, 'Duplicate ioc_id: ' . $data['ioc_id']);
+                            fail(409, 'Duplicate ioc_id: ' . $ioc_id);
                         }
                         fail(500, 'Insert failed: ' . $e->getMessage());
                     }
