@@ -132,11 +132,51 @@
         var status = $('status-message');
         var result = $('result');
         var button = form.querySelector('button[type="submit"]');
+        var lastQuery = '';
+
+        /* Delete button rendered with each record when the form
+         * declares data-delete-endpoint. data-delete-param names the
+         * record field holding the value the endpoint expects
+         * (cve_id, exploit_id, ioc_id or the internal id). */
+        function deleteButton(rec) {
+            var key = form.dataset.deleteParam || 'id';
+            var value = rec[key];
+            var btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'delete-button';
+            btn.textContent = 'Delete';
+            btn.addEventListener('click', function () {
+                if (value === undefined || value === null || value === '') {
+                    setStatus(status, 'Cannot delete: record has no ' + key + '.', 'error');
+                    return;
+                }
+                if (!window.confirm('Delete this record (' + key + ' = ' + value + ')?')) { return; }
+                setStatus(status, 'Deleting...', '');
+                btn.disabled = true;
+                api(form.dataset.deleteEndpoint + '?' +
+                    encodeURIComponent(key) + '=' + encodeURIComponent(value),
+                    { method: 'DELETE' }
+                ).then(function (r) {
+                    if (!r.ok) {
+                        setStatus(status, 'Delete failed (HTTP ' + r.status + ')', 'error');
+                        btn.disabled = false;
+                        return;
+                    }
+                    setStatus(status, 'Deleted (HTTP ' + r.status + ')', 'success');
+                    run(lastQuery);          // refresh the current view
+                }).catch(function (err) {
+                    setStatus(status, 'Could not reach the application tier: ' + err.message, 'error');
+                    btn.disabled = false;
+                });
+            });
+            return btn;
+        }
 
         /* One search = one GET on the consult endpoint. With a query
          * it narrows to the requested reference; without a query the
          * endpoint returns every record of the linked table. */
         function run(query) {
+            lastQuery = query;
             result.innerHTML = '';
             var path = form.dataset.consultEndpoint + (query ? '?' + query : '');
 
@@ -150,17 +190,23 @@
                     return;
                 }
                 var record = r.data[form.dataset.recordKey];
-                if (Array.isArray(record)) {
-                    if (record.length === 0) {
-                        setStatus(status, 'No records found.', '');
-                        return;
-                    }
-                    setStatus(status, record.length + ' record(s) found (HTTP ' + r.status + ')', 'success');
-                    record.forEach(function (rec) { result.appendChild(recordTable(rec)); });
-                } else {
-                    setStatus(status, 'Found (HTTP ' + r.status + ')', 'success');
-                    result.appendChild(recordTable(record));
+                var records = Array.isArray(record) ? record : [record];
+                if (records.length === 0) {
+                    setStatus(status, 'No records found.', '');
+                    return;
                 }
+                setStatus(status, Array.isArray(record)
+                    ? records.length + ' record(s) found (HTTP ' + r.status + ')'
+                    : 'Found (HTTP ' + r.status + ')', 'success');
+                records.forEach(function (rec) {
+                    var item = document.createElement('div');
+                    item.className = 'record-item';
+                    item.appendChild(recordTable(rec));
+                    if (form.dataset.deleteEndpoint) {
+                        item.appendChild(deleteButton(rec));
+                    }
+                    result.appendChild(item);
+                });
             }).catch(function (err) {
                 setStatus(status, 'Could not reach the application tier: ' + err.message, 'error');
             }).finally(function () {
