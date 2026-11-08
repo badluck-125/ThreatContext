@@ -386,7 +386,7 @@ switch ($path) {
                  *   3. Samples for CVE platform in tab_sample? (may be empty)
                  *   4. RAG preparation (structured request)
                  *   5. Send to ThreatContext-llm (Ollama /api/chat)
-                 *   6. Positive -> store tab_ioc + link tab_cve; Negative -> inform
+                 *   6. Positive -> one tab_ioc row per IoC + link tab_cve; Negative -> inform
                  *   7. Close connection (JSON response, exit)
                  * ======================================================== */
                 case '/ioc-request':
@@ -470,29 +470,47 @@ switch ($path) {
                     }
 
                     // ---- Step 6c: positive answer -> store IoCs + link the CVE ----
+                    // One tab_ioc row per IoC found by the LLM, each with
+                    // its own ioc_id (next free value per row) and a
+                    // {cve_id, ioc_type, ioc_content} bundle.
                     try {
                         db()->beginTransaction();
-
-                        $ioc_id = next_id('tab_ioc', 'ioc_id');
 
                         $ins = db()->prepare(
                             'INSERT INTO tab_ioc (ioc_id, ioc_content)
                         VALUES (:ioc_id, :ioc_content)'
                         );
-                        $ins->execute([
-                            ':ioc_id'      => $ioc_id,
-                            ':ioc_content' => json_encode(
-                                ['cve_id' => $cve_id, 'ioc_found' => $ioc_found],
-                                JSON_UNESCAPED_SLASHES
-                            ),
-                        ]);
+                        $ioc_ids = [];
+                        foreach ($ioc_found as $ioc) {
+                            $ioc_id = next_id('tab_ioc', 'ioc_id');
+                            $ioc_ids[] = $ioc_id;
+                            $ins->execute([
+                                ':ioc_id'      => $ioc_id,
+                                ':ioc_content' => json_encode(
+                                    [
+                                        'cve_id'      => $cve_id,
+                                        'ioc_type'    => $ioc['ioc_type']    ?? '',
+                                        'ioc_content' => $ioc['ioc_content'] ?? '',
+                                    ],
+                                    JSON_UNESCAPED_SLASHES
+                                ),
+                            ]);
+                        }
 
+                        // Link the CVE to the first attributed ioc_id.
+                        // rowCount must be 1: a silent 0 would leave
+                        // tab_cve pointing nowhere.
                         $upd = db()->prepare(
                             'UPDATE tab_cve
                             SET ioc_id = :ioc_id, date_modified = CURRENT_DATE
                             WHERE cve_id = :cve_id'
                         );
-                        $upd->execute([':ioc_id' => $ioc_id, ':cve_id' => $cve_id]);
+                        $upd->execute([':ioc_id' => $ioc_ids[0], ':cve_id' => $cve_id]);
+                        if ($upd->rowCount() !== 1) {
+                            throw new PDOException(
+                                'tab_cve link failed: UPDATE matched no row for ' . $cve_id
+                            );
+                        }
 
                         db()->commit();
                     } catch (PDOException $e) {
@@ -504,7 +522,8 @@ switch ($path) {
                     json_response(200, [
                         'ioc_found' => $ioc_found,
                         'cve_id'    => $cve_id,
-                        'ioc_id'    => $ioc_id,
+                        'ioc_id'    => $ioc_ids[0],   // first attributed id
+                        'ioc_ids'   => $ioc_ids,      // every attributed id
                     ]);
                     break;
 
@@ -675,7 +694,9 @@ switch ($path) {
                  * With ?ioc_id=1: only that bundle.
                  * tab_ioc.ioc_content stores a JSON bundle:
                  *  - manual entries (/ioc-entry): {"ioc_type", "ioc_content"}
-                 *  - pipeline bundles (/ioc-request): {"cve_id", "ioc_found"}
+                 *  - pipeline bundles (/ioc-request): {"cve_id", "ioc_type",
+                 *    "ioc_content"}, one tab_ioc row per LLM-found IoC
+                 *    (legacy rows: {"cve_id", "ioc_found"})
                  * Unknown or legacy shapes fall back to the raw value.
                  * ======================================================== */
                 case '/ioc-consult':
