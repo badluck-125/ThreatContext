@@ -114,7 +114,9 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             }).then(function (r) {
-                setStatus(status, r.ok ? 'Saved (HTTP ' + r.status + ')' : 'Error (HTTP ' + r.status + ')', r.ok ? 'success' : 'error');
+                // Distinguish a fresh record from a replaced one.
+                var verb = (r.data && r.data.updated) ? 'Updated' : 'Saved';
+                setStatus(status, r.ok ? verb + ' (HTTP ' + r.status + ')' : 'Error (HTTP ' + r.status + ')', r.ok ? 'success' : 'error');
                 result.appendChild(jsonBox(r.data));
             }).catch(function (err) {
                 setStatus(status, 'Could not reach the application tier: ' + err.message, 'error');

@@ -7,10 +7,10 @@
  * in the php:8.3-apache container (container port 80).
  *
  * Endpoints (path after the host):
- *   POST /cve-entry      -> INSERT INTO tab_cve
- *   POST /exploit-entry  -> INSERT INTO tab_exploit
+ *   POST /cve-entry      -> INSERT INTO tab_cve (existing cve_id: update)
+ *   POST /exploit-entry  -> INSERT INTO tab_exploit (existing exploit_id: update)
  *   POST /sample-entry   -> INSERT INTO tab_sample
- *   POST /ioc-entry      -> INSERT INTO tab_ioc (manual ingestion)
+ *   POST /ioc-entry      -> INSERT INTO tab_ioc (manual ingestion, existing ioc_id: update)
  *   POST /ioc-request    -> full pipeline (steps 1-7):
  *                           CVE -> exploit + samples -> RAG build
  *                           -> ThreatContext-llm -> tab_ioc + tab_cve link
@@ -235,6 +235,7 @@ switch ($path) {
      *   { "cve_id": "...", "exploit_id": 1, "ioc_id": 1,
      *     "platform": "linux_web", "cve_source": "..." }
      * cve_source is optional; defaults to 'unprovided' in DB.
+     * An existing cve_id gets every value replaced (update).
      * -------------------------------------------------------- */
     case '/cve-entry':
         if ($method !== 'POST') { fail(405, 'Use POST.'); }
@@ -245,27 +246,37 @@ switch ($path) {
         $ioc_id     = isset($data['ioc_id'])     ? (int) $data['ioc_id']     : 0;
         $cve_source = $data['cve_source'] ?? 'unprovided';
 
-        $stmt = db()->prepare(
+        $insert = db()->prepare(
             'INSERT INTO tab_cve (cve_id, exploit_id, ioc_id, platform, cve_source)
         VALUES (:cve_id, :exploit_id, :ioc_id, :platform, :cve_source)
         RETURNING id, cve_id, exploit_id, ioc_id, platform, cve_source, date_added, date_modified'
         );
+        // Existing cve_id: replace every value of the stored record.
+        $update = db()->prepare(
+            'UPDATE tab_cve
+          SET exploit_id = :exploit_id, ioc_id = :ioc_id,
+              platform = :platform, cve_source = :cve_source,
+              date_modified = CURRENT_DATE
+        WHERE cve_id = :cve_id
+    RETURNING id, cve_id, exploit_id, ioc_id, platform, cve_source, date_added, date_modified'
+        );
+        $params = [
+            ':cve_id'     => $data['cve_id'],
+            ':exploit_id' => $exploit_id,
+            ':ioc_id'     => $ioc_id,
+            ':platform'   => $data['platform'],
+            ':cve_source' => $cve_source,
+        ];
         try {
-            $stmt->execute([
-                ':cve_id'     => $data['cve_id'],
-                ':exploit_id' => $exploit_id,
-                ':ioc_id'     => $ioc_id,
-                ':platform'   => $data['platform'],
-                ':cve_source' => $cve_source,
-            ]);
+            $insert->execute($params);
+            json_response(201, ['ok' => true, 'created' => $insert->fetch()]);
         } catch (PDOException $e) {
-            if ($e->getCode() === '23505') { // unique_violation
-                fail(409, 'Duplicate cve_id: ' . $data['cve_id']);
+            if ($e->getCode() === '23505') { // unique_violation -> update
+                $update->execute($params);
+                json_response(200, ['ok' => true, 'updated' => $update->fetch()]);
             }
             fail(500, 'Insert failed: ' . $e->getMessage());
         }
-
-        json_response(201, ['ok' => true, 'created' => $stmt->fetch()]);
         break;
 
         /* --------------------------------------------------------
@@ -276,6 +287,7 @@ switch ($path) {
          * exploit_id is optional: when absent, empty or null the next
          * free value (last stored + 1) is attributed automatically.
          * exploit_source is optional; defaults to 'unprovided' in DB.
+         * An existing exploit_id gets every value replaced (update).
          * -------------------------------------------------------- */
         case '/exploit-entry':
             if ($method !== 'POST') { fail(405, 'Use POST.'); }
@@ -287,26 +299,35 @@ switch ($path) {
                 : next_id('tab_exploit', 'exploit_id');
             $exploit_source = $data['exploit_source'] ?? 'unprovided';
 
-            $stmt = db()->prepare(
+            $insert = db()->prepare(
                 'INSERT INTO tab_exploit (exploit_id, exploit_type, exploit_content, exploit_source)
             VALUES (:exploit_id, :exploit_type, :exploit_content, :exploit_source)
             RETURNING id, exploit_id, exploit_type, exploit_source, date_added, date_modified'
             );
+            // Existing exploit_id: replace every value of the stored record.
+            $update = db()->prepare(
+                "UPDATE tab_exploit
+              SET exploit_type = :exploit_type, exploit_content = :exploit_content,
+                  exploit_source = :exploit_source, date_modified = CURRENT_DATE
+            WHERE exploit_id = :exploit_id
+        RETURNING id, exploit_id, exploit_type, exploit_source, date_added, date_modified"
+            );
+            $params = [
+                ':exploit_id'      => $exploit_id,
+                ':exploit_type'    => $data['exploit_type'],
+                ':exploit_content' => $data['exploit_content'],
+                ':exploit_source'  => $exploit_source,
+            ];
             try {
-                $stmt->execute([
-                    ':exploit_id'      => $exploit_id,
-                               ':exploit_type'    => $data['exploit_type'],
-                               ':exploit_content' => $data['exploit_content'],
-                               ':exploit_source'  => $exploit_source,
-                ]);
+                $insert->execute($params);
+                json_response(201, ['ok' => true, 'created' => $insert->fetch()]);
             } catch (PDOException $e) {
-                if ($e->getCode() === '23505') {
-                    fail(409, 'Duplicate exploit_id: ' . $exploit_id);
+                if ($e->getCode() === '23505') { // unique_violation -> update
+                    $update->execute($params);
+                    json_response(200, ['ok' => true, 'updated' => $update->fetch()]);
                 }
                 fail(500, 'Insert failed: ' . $e->getMessage());
             }
-
-            json_response(201, ['ok' => true, 'created' => $stmt->fetch()]);
             break;
 
             /* --------------------------------------------------------
@@ -490,6 +511,7 @@ switch ($path) {
                  * ioc_id is optional: when absent, empty or null the next
                  * free value (last stored + 1) is attributed automatically,
                  * exactly like the /ioc-request pipeline does.
+                 * An existing ioc_id gets its bundle replaced (update).
                  * ioc_type + ioc_content are stored as one JSON bundle in
                  * tab_ioc.ioc_content (same shape the /ioc-request
                  * pipeline stores for LLM-found IoCs).
@@ -503,27 +525,35 @@ switch ($path) {
                         ? (int) $data['ioc_id']
                         : next_id('tab_ioc', 'ioc_id');
 
-                    $stmt = db()->prepare(
+                    $insert = db()->prepare(
                         'INSERT INTO tab_ioc (ioc_id, ioc_content)
                      VALUES (:ioc_id, :ioc_content)
                      RETURNING id, ioc_id, ioc_content, date_added, date_modified'
                     );
+                    // Existing ioc_id: replace the stored bundle.
+                    $update = db()->prepare(
+                        'UPDATE tab_ioc
+                      SET ioc_content = :ioc_content, date_modified = CURRENT_DATE
+                    WHERE ioc_id = :ioc_id
+                RETURNING id, ioc_id, ioc_content, date_added, date_modified'
+                    );
+                    $params = [
+                        ':ioc_id'      => $ioc_id,
+                        ':ioc_content' => json_encode(
+                            ['ioc_type' => $data['ioc_type'], 'ioc_content' => $data['ioc_content']],
+                            JSON_UNESCAPED_SLASHES
+                        ),
+                    ];
                     try {
-                        $stmt->execute([
-                            ':ioc_id'      => $ioc_id,
-                            ':ioc_content' => json_encode(
-                                ['ioc_type' => $data['ioc_type'], 'ioc_content' => $data['ioc_content']],
-                                JSON_UNESCAPED_SLASHES
-                            ),
-                        ]);
+                        $insert->execute($params);
+                        json_response(201, ['ok' => true, 'created' => $insert->fetch()]);
                     } catch (PDOException $e) {
-                        if ($e->getCode() === '23505') {
-                            fail(409, 'Duplicate ioc_id: ' . $ioc_id);
+                        if ($e->getCode() === '23505') { // unique_violation -> update
+                            $update->execute($params);
+                            json_response(200, ['ok' => true, 'updated' => $update->fetch()]);
                         }
                         fail(500, 'Insert failed: ' . $e->getMessage());
                     }
-
-                    json_response(201, ['ok' => true, 'created' => $stmt->fetch()]);
                     break;
 
                 /* ========================================================
