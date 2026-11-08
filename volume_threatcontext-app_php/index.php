@@ -471,14 +471,14 @@ switch ($path) {
 
                     // ---- Step 6c: positive answer -> store IoCs + link the CVE ----
                     // One tab_ioc row per IoC found by the LLM, each with
-                    // its own ioc_id (next free value per row) and a
-                    // {cve_id, ioc_type, ioc_content} bundle.
+                    // its own ioc_id (next free value per row); ioc_type
+                    // and ioc_content are plain tab_ioc columns.
                     try {
                         db()->beginTransaction();
 
                         $ins = db()->prepare(
-                            'INSERT INTO tab_ioc (ioc_id, ioc_content)
-                        VALUES (:ioc_id, :ioc_content)'
+                            'INSERT INTO tab_ioc (ioc_id, ioc_type, ioc_content)
+                        VALUES (:ioc_id, :ioc_type, :ioc_content)'
                         );
                         $ioc_ids = [];
                         foreach ($ioc_found as $ioc) {
@@ -486,14 +486,8 @@ switch ($path) {
                             $ioc_ids[] = $ioc_id;
                             $ins->execute([
                                 ':ioc_id'      => $ioc_id,
-                                ':ioc_content' => json_encode(
-                                    [
-                                        'cve_id'      => $cve_id,
-                                        'ioc_type'    => $ioc['ioc_type']    ?? '',
-                                        'ioc_content' => $ioc['ioc_content'] ?? '',
-                                    ],
-                                    JSON_UNESCAPED_SLASHES
-                                ),
+                                ':ioc_type'    => $ioc['ioc_type']    ?? 'unprovided',
+                                ':ioc_content' => $ioc['ioc_content'] ?? '',
                             ]);
                         }
 
@@ -534,10 +528,9 @@ switch ($path) {
                  * ioc_id is optional: when absent, empty or null the next
                  * free value (last stored + 1) is attributed automatically,
                  * exactly like the /ioc-request pipeline does.
-                 * An existing ioc_id gets its bundle replaced (update).
-                 * ioc_type + ioc_content are stored as one JSON bundle in
-                 * tab_ioc.ioc_content (same shape the /ioc-request
-                 * pipeline stores for LLM-found IoCs).
+                 * An existing ioc_id gets its values replaced (update).
+                 * ioc_type and ioc_content are stored as plain tab_ioc
+                 * columns, no JSON encoding involved.
                  * ======================================================== */
                 case '/ioc-entry':
                     if ($method !== 'POST') { fail(405, 'Use POST.'); }
@@ -549,23 +542,22 @@ switch ($path) {
                         : next_id('tab_ioc', 'ioc_id');
 
                     $insert = db()->prepare(
-                        'INSERT INTO tab_ioc (ioc_id, ioc_content)
-                     VALUES (:ioc_id, :ioc_content)
-                     RETURNING id, ioc_id, ioc_content, date_added, date_modified'
+                        'INSERT INTO tab_ioc (ioc_id, ioc_type, ioc_content)
+                     VALUES (:ioc_id, :ioc_type, :ioc_content)
+                     RETURNING id, ioc_id, ioc_type, ioc_content, date_added, date_modified'
                     );
-                    // Existing ioc_id: replace the stored bundle.
+                    // Existing ioc_id: replace the stored values.
                     $update = db()->prepare(
                         'UPDATE tab_ioc
-                      SET ioc_content = :ioc_content, date_modified = CURRENT_DATE
+                      SET ioc_type = :ioc_type, ioc_content = :ioc_content,
+                          date_modified = CURRENT_DATE
                     WHERE ioc_id = :ioc_id
-                RETURNING id, ioc_id, ioc_content, date_added, date_modified'
+                RETURNING id, ioc_id, ioc_type, ioc_content, date_added, date_modified'
                     );
                     $params = [
                         ':ioc_id'      => $ioc_id,
-                        ':ioc_content' => json_encode(
-                            ['ioc_type' => $data['ioc_type'], 'ioc_content' => $data['ioc_content']],
-                            JSON_UNESCAPED_SLASHES
-                        ),
+                        ':ioc_type'    => $data['ioc_type'],
+                        ':ioc_content' => $data['ioc_content'],
                     ];
                     try {
                         $insert->execute($params);
@@ -690,22 +682,18 @@ switch ($path) {
 
                 /* ========================================================
                  * GET /ioc-consult — consult tab_ioc
-                 * Without query: every stored IoC bundle.
-                 * With ?ioc_id=1: only that bundle.
-                 * tab_ioc.ioc_content stores a JSON bundle:
-                 *  - manual entries (/ioc-entry): {"ioc_type", "ioc_content"}
-                 *  - pipeline bundles (/ioc-request): {"cve_id", "ioc_type",
-                 *    "ioc_content"}, one tab_ioc row per LLM-found IoC
-                 *    (legacy rows: {"cve_id", "ioc_found"})
-                 * Unknown or legacy shapes fall back to the raw value.
+                 * Without query: every stored IoC.
+                 * With ?ioc_id=1: only that record.
+                 * ioc_type and ioc_content are plain tab_ioc columns, so
+                 * rows are returned exactly as stored, no decoding.
                  * ======================================================== */
                 case '/ioc-consult':
                     if ($method !== 'GET') { fail(405, 'Use GET.'); }
                     $ioc_id = $_GET['ioc_id'] ?? '';
                     if ($ioc_id === '') {
-                        // No filter given: every stored IoC bundle.
+                        // No filter given: every stored IoC.
                         $iocs = db()->query(
-                            'SELECT id, ioc_id, ioc_content, date_added, date_modified
+                            'SELECT id, ioc_id, ioc_type, ioc_content, date_added, date_modified
                              FROM tab_ioc
                              ORDER BY ioc_id'
                         )->fetchAll();
@@ -714,7 +702,7 @@ switch ($path) {
                             fail(422, 'Missing or invalid parameter: ioc_id');
                         }
                         $stmt = db()->prepare(
-                            'SELECT id, ioc_id, ioc_content, date_added, date_modified
+                            'SELECT id, ioc_id, ioc_type, ioc_content, date_added, date_modified
                              FROM tab_ioc
                              WHERE ioc_id = :ioc_id'
                         );
@@ -724,22 +712,6 @@ switch ($path) {
                             fail(404, 'Unknown ioc_id: ' . $ioc_id);
                         }
                     }
-                    // Decode each JSON bundle so the presentation tier
-                    // receives JSON objects, not strings.
-                    foreach ($iocs as &$ioc) {
-                        $bundle = json_decode((string) $ioc['ioc_content'], true);
-                        if (is_array($bundle) && isset($bundle['ioc_type'], $bundle['ioc_content'])) {
-                            $ioc['ioc_type']    = $bundle['ioc_type'];
-                            $ioc['ioc_content'] = $bundle['ioc_content'];
-                        } elseif (is_array($bundle) && isset($bundle['ioc_found'])) {
-                            $ioc['ioc_type']    = 'pipeline';
-                            $ioc['ioc_content'] = $bundle['ioc_found'];
-                        } else {
-                            $ioc['ioc_type']    = '';
-                            $ioc['ioc_content'] = (string) $ioc['ioc_content'];
-                        }
-                    }
-                    unset($ioc);
                     // A filtered lookup keeps the historic single-record
                     // shape; the full listing returns an array.
                     json_response(200, ['ok' => true, 'ioc' => ($ioc_id === '' ? $iocs : $iocs[0])]);
@@ -834,7 +806,7 @@ switch ($path) {
                         fail(422, 'Missing or invalid parameter: ioc_id');
                     }
                     $stmt = db()->prepare(
-                        'SELECT id, ioc_id, ioc_content, date_added, date_modified
+                        'SELECT id, ioc_id, ioc_type, ioc_content, date_added, date_modified
                          FROM tab_ioc
                          WHERE ioc_id = :ioc_id'
                     );
