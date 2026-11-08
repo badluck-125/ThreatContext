@@ -7,14 +7,17 @@
  * in the php:8.3-apache container (container port 80).
  *
  * Endpoints (path after the host):
- *   POST /cve-entry      -> INSERT INTO tab_cve (existing cve_id: update)
+ *   POST /cve-entry      -> INSERT INTO tab_cve (new row; a cve_id may
+ *                           span several rows, one per linked IoC)
  *   POST /exploit-entry  -> INSERT INTO tab_exploit (existing exploit_id: update)
  *   POST /sample-entry   -> INSERT INTO tab_sample
  *   POST /ioc-entry      -> INSERT INTO tab_ioc (manual ingestion, existing ioc_id: update)
  *   POST /ioc-request    -> full pipeline (steps 1-7):
  *                           CVE -> exploit + samples -> RAG build
- *                           -> ThreatContext-llm -> tab_ioc + tab_cve link
- *   GET  /cve-consult     -> consult tab_cve (all records, or one by cve_id)
+ *                           -> ThreatContext-llm -> tab_ioc rows + one
+ *                           tab_cve row per cve_id/ioc_id couple
+ *   GET  /cve-consult     -> consult tab_cve (all records, or all rows
+ *                           of one cve_id)
  *   GET  /exploit-consult -> consult tab_exploit (all records, or one by exploit_id)
  *   GET  /sample-consult  -> consult tab_sample (all records, or all by platform)
  *   GET  /ioc-consult     -> consult tab_ioc (all records, or one by ioc_id)
@@ -239,7 +242,8 @@ switch ($path) {
      *   { "cve_id": "...", "exploit_id": 1, "ioc_id": 1,
      *     "platform": "linux_web", "cve_source": "..." }
      * cve_source is optional; defaults to 'unprovided' in DB.
-     * An existing cve_id gets every value replaced (update).
+     * Every submission inserts a new row: a cve_id may span several
+     * tab_cve rows (one per linked IoC, created by /ioc-request).
      * -------------------------------------------------------- */
     case '/cve-entry':
         if ($method !== 'POST') { fail(405, 'Use POST.'); }
@@ -255,15 +259,6 @@ switch ($path) {
         VALUES (:cve_id, :exploit_id, :ioc_id, :platform, :cve_source)
         RETURNING id, cve_id, exploit_id, ioc_id, platform, cve_source, date_added, date_modified'
         );
-        // Existing cve_id: replace every value of the stored record.
-        $update = db()->prepare(
-            'UPDATE tab_cve
-          SET exploit_id = :exploit_id, ioc_id = :ioc_id,
-              platform = :platform, cve_source = :cve_source,
-              date_modified = CURRENT_DATE
-        WHERE cve_id = :cve_id
-    RETURNING id, cve_id, exploit_id, ioc_id, platform, cve_source, date_added, date_modified'
-        );
         $params = [
             ':cve_id'     => $data['cve_id'],
             ':exploit_id' => $exploit_id,
@@ -275,10 +270,6 @@ switch ($path) {
             $insert->execute($params);
             json_response(201, ['ok' => true, 'created' => $insert->fetch()]);
         } catch (PDOException $e) {
-            if ($e->getCode() === '23505') { // unique_violation -> update
-                $update->execute($params);
-                json_response(200, ['ok' => true, 'updated' => $update->fetch()]);
-            }
             fail(500, 'Insert failed: ' . $e->getMessage());
         }
         break;
@@ -386,7 +377,8 @@ switch ($path) {
                  *   3. Samples for CVE platform in tab_sample? (may be empty)
                  *   4. RAG preparation (structured request)
                  *   5. Send to ThreatContext-llm (Ollama /api/chat)
-                 *   6. Positive -> one tab_ioc row per IoC + link tab_cve; Negative -> inform
+                 *   6. Positive -> one tab_ioc row per IoC + one tab_cve row
+                 *      per cve_id/ioc_id couple; Negative -> inform
                  *   7. Close connection (JSON response, exit)
                  * ======================================================== */
                 case '/ioc-request':
@@ -469,10 +461,15 @@ switch ($path) {
                         ]);
                     }
 
-                    // ---- Step 6c: positive answer -> store IoCs + link the CVE ----
+                    // ---- Step 6c: positive answer -> store IoCs + CVE rows ----
                     // One tab_ioc row per IoC found by the LLM, each with
                     // its own ioc_id (next free value per row); ioc_type
-                    // and ioc_content are plain tab_ioc columns.
+                    // and ioc_content are plain tab_ioc columns. The CVE
+                    // side is then rewritten in tab_cve: every previous
+                    // row for this cve_id is replaced by one row per
+                    // cve_id/ioc_id couple, carrying over the original
+                    // exploit_id, platform, cve_source and date_added.
+                    // Re-running the request replaces the previous set.
                     try {
                         db()->beginTransaction();
 
@@ -491,19 +488,22 @@ switch ($path) {
                             ]);
                         }
 
-                        // Link the CVE to the first attributed ioc_id.
-                        // rowCount must be 1: a silent 0 would leave
-                        // tab_cve pointing nowhere.
-                        $upd = db()->prepare(
-                            'UPDATE tab_cve
-                            SET ioc_id = :ioc_id, date_modified = CURRENT_DATE
-                            WHERE cve_id = :cve_id'
+                        // Rewrite the CVE side: one row per couple.
+                        db()->prepare('DELETE FROM tab_cve WHERE cve_id = :cve_id')
+                            ->execute([':cve_id' => $cve_id]);
+                        $ins_cve = db()->prepare(
+                            'INSERT INTO tab_cve (cve_id, exploit_id, ioc_id, platform, cve_source, date_added)
+                        VALUES (:cve_id, :exploit_id, :ioc_id, :platform, :cve_source, :date_added)'
                         );
-                        $upd->execute([':ioc_id' => $ioc_ids[0], ':cve_id' => $cve_id]);
-                        if ($upd->rowCount() !== 1) {
-                            throw new PDOException(
-                                'tab_cve link failed: UPDATE matched no row for ' . $cve_id
-                            );
+                        foreach ($ioc_ids as $ioc_id) {
+                            $ins_cve->execute([
+                                ':cve_id'     => $cve_id,
+                                ':exploit_id' => $cve['exploit_id'],
+                                ':ioc_id'     => $ioc_id,
+                                ':platform'   => $cve['platform'],
+                                ':cve_source' => $cve['cve_source'],
+                                ':date_added' => $cve['date_added'],
+                            ]);
                         }
 
                         db()->commit();
@@ -518,6 +518,7 @@ switch ($path) {
                         'cve_id'    => $cve_id,
                         'ioc_id'    => $ioc_ids[0],   // first attributed id
                         'ioc_ids'   => $ioc_ids,      // every attributed id
+                        'cve_rows'  => count($ioc_ids), // tab_cve rows written
                     ]);
                     break;
 
@@ -573,8 +574,9 @@ switch ($path) {
 
                 /* ========================================================
                  * GET /cve-consult — consult tab_cve
-                 * Without query: every registered CVE.
-                 * With ?cve_id=CVE-2026-109618: only that record.
+                 * Without query: every registered CVE row.
+                 * With ?cve_id=CVE-2026-109618: every row of that cve_id
+                 * (a cve_id may span several rows, one per linked IoC).
                  * ======================================================== */
                 case '/cve-consult':
                     if ($method !== 'GET') { fail(405, 'Use GET.'); }
@@ -596,11 +598,13 @@ switch ($path) {
                          WHERE cve_id = :cve_id'
                     );
                     $stmt->execute([':cve_id' => $cve_id]);
-                    $cve = $stmt->fetch();
-                    if ($cve === false) {
+                    $rows = $stmt->fetchAll();
+                    if (count($rows) === 0) {
                         fail(404, 'Unknown CVE: ' . $cve_id);
                     }
-                    json_response(200, ['ok' => true, 'cve' => $cve]);
+                    // Filtered lookup returns an array: a cve_id may
+                    // span several rows (one per linked IoC).
+                    json_response(200, ['ok' => true, 'cve' => $rows]);
                     break;
 
                 /* ========================================================
@@ -718,10 +722,10 @@ switch ($path) {
                     break;
 
                 /* ========================================================
-                 * DELETE /cve-delete — remove one tab_cve record
+                 * DELETE /cve-delete — remove every tab_cve row of a cve_id
                  * Query: ?cve_id=CVE-2026-109618
-                 * Deletes only the tab_cve row; any linked tab_exploit /
-                 * tab_ioc records are left untouched.
+                 * Deletes all rows of that cve_id (one per linked IoC);
+                 * any linked tab_exploit / tab_ioc records are untouched.
                  * ======================================================== */
                 case '/cve-delete':
                     if ($method !== 'DELETE') { fail(405, 'Use DELETE.'); }
@@ -734,11 +738,11 @@ switch ($path) {
                          WHERE cve_id = :cve_id'
                     );
                     $stmt->execute([':cve_id' => $cve_id]);
-                    $row = $stmt->fetch();
-                    if ($row === false) { fail(404, 'Unknown CVE: ' . $cve_id); }
+                    $rows = $stmt->fetchAll();
+                    if (count($rows) === 0) { fail(404, 'Unknown CVE: ' . $cve_id); }
                     db()->prepare('DELETE FROM tab_cve WHERE cve_id = :cve_id')
                         ->execute([':cve_id' => $cve_id]);
-                    json_response(200, ['ok' => true, 'deleted' => $row]);
+                    json_response(200, ['ok' => true, 'deleted' => $rows]);
                     break;
 
                 /* ========================================================
