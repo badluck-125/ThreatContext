@@ -18,6 +18,10 @@
  *   GET  /exploit-consult -> consult tab_exploit (all records, or one by exploit_id)
  *   GET  /sample-consult  -> consult tab_sample (all records, or all by platform)
  *   GET  /ioc-consult     -> consult tab_ioc (all records, or one by ioc_id)
+ *   DELETE /cve-delete     -> delete a tab_cve record by cve_id
+ *   DELETE /exploit-delete -> delete a tab_exploit record by exploit_id
+ *   DELETE /sample-delete  -> delete a tab_sample record by internal id
+ *   DELETE /ioc-delete     -> delete a tab_ioc record by ioc_id
  *
  * /ioc-request body: {"request": "CVE-2026-109618"}
  *   (GET /index.php/ioc-request?request=CVE-... also accepted for tests)
@@ -567,7 +571,7 @@ switch ($path) {
                     if ($cve_id === '') {
                         // No filter given: return every registered CVE.
                         $rows = db()->query(
-                            'SELECT cve_id, exploit_id, ioc_id, platform, cve_source,
+                            'SELECT id, cve_id, exploit_id, ioc_id, platform, cve_source,
                                     date_added, date_modified
                              FROM tab_cve
                              ORDER BY cve_id'
@@ -575,7 +579,7 @@ switch ($path) {
                         json_response(200, ['ok' => true, 'cve' => $rows]);
                     }
                     $stmt = db()->prepare(
-                        'SELECT cve_id, exploit_id, ioc_id, platform, cve_source,
+                        'SELECT id, cve_id, exploit_id, ioc_id, platform, cve_source,
                                 date_added, date_modified
                          FROM tab_cve
                          WHERE cve_id = :cve_id'
@@ -602,7 +606,7 @@ switch ($path) {
                         // No filter given: every registered exploit,
                         // without exploit_content (light listing).
                         $rows = db()->query(
-                            'SELECT exploit_id, exploit_type, exploit_source,
+                            'SELECT id, exploit_id, exploit_type, exploit_source,
                                     date_added, date_modified
                              FROM tab_exploit
                              ORDER BY exploit_id'
@@ -613,7 +617,7 @@ switch ($path) {
                         fail(422, 'Missing or invalid parameter: exploit_id');
                     }
                     $stmt = db()->prepare(
-                        'SELECT exploit_id, exploit_type, exploit_content, exploit_source,
+                        'SELECT id, exploit_id, exploit_type, exploit_content, exploit_source,
                                 date_added, date_modified
                          FROM tab_exploit
                          WHERE exploit_id = :exploit_id'
@@ -638,14 +642,14 @@ switch ($path) {
                     if ($platform === '') {
                         // No filter given: every registered sample.
                         $samples = db()->query(
-                            'SELECT platform, title, point_of_interest, sample_content,
+                            'SELECT id, platform, title, point_of_interest, sample_content,
                                     sample_source, date_added, date_modified
                              FROM tab_sample
                              ORDER BY platform, date_added DESC'
                         )->fetchAll();
                     } else {
                         $stmt = db()->prepare(
-                            'SELECT platform, title, point_of_interest, sample_content,
+                            'SELECT id, platform, title, point_of_interest, sample_content,
                                     sample_source, date_added, date_modified
                              FROM tab_sample
                              WHERE platform = :platform
@@ -680,7 +684,7 @@ switch ($path) {
                     if ($ioc_id === '') {
                         // No filter given: every stored IoC bundle.
                         $iocs = db()->query(
-                            'SELECT ioc_id, ioc_content, date_added, date_modified
+                            'SELECT id, ioc_id, ioc_content, date_added, date_modified
                              FROM tab_ioc
                              ORDER BY ioc_id'
                         )->fetchAll();
@@ -689,7 +693,7 @@ switch ($path) {
                             fail(422, 'Missing or invalid parameter: ioc_id');
                         }
                         $stmt = db()->prepare(
-                            'SELECT ioc_id, ioc_content, date_added, date_modified
+                            'SELECT id, ioc_id, ioc_content, date_added, date_modified
                              FROM tab_ioc
                              WHERE ioc_id = :ioc_id'
                         );
@@ -718,6 +722,107 @@ switch ($path) {
                     // A filtered lookup keeps the historic single-record
                     // shape; the full listing returns an array.
                     json_response(200, ['ok' => true, 'ioc' => ($ioc_id === '' ? $iocs : $iocs[0])]);
+                    break;
+
+                /* ========================================================
+                 * DELETE /cve-delete — remove one tab_cve record
+                 * Query: ?cve_id=CVE-2026-109618
+                 * Deletes only the tab_cve row; any linked tab_exploit /
+                 * tab_ioc records are left untouched.
+                 * ======================================================== */
+                case '/cve-delete':
+                    if ($method !== 'DELETE') { fail(405, 'Use DELETE.'); }
+                    $cve_id = $_GET['cve_id'] ?? '';
+                    if ($cve_id === '') { fail(422, 'Missing required parameter: cve_id'); }
+                    $stmt = db()->prepare(
+                        'SELECT id, cve_id, exploit_id, ioc_id, platform, cve_source,
+                                date_added, date_modified
+                         FROM tab_cve
+                         WHERE cve_id = :cve_id'
+                    );
+                    $stmt->execute([':cve_id' => $cve_id]);
+                    $row = $stmt->fetch();
+                    if ($row === false) { fail(404, 'Unknown CVE: ' . $cve_id); }
+                    db()->prepare('DELETE FROM tab_cve WHERE cve_id = :cve_id')
+                        ->execute([':cve_id' => $cve_id]);
+                    json_response(200, ['ok' => true, 'deleted' => $row]);
+                    break;
+
+                /* ========================================================
+                 * DELETE /exploit-delete — remove one tab_exploit record
+                 * Query: ?exploit_id=317
+                 * Deletes only the tab_exploit row; CVE rows pointing to
+                 * it keep their stored exploit_id value.
+                 * ======================================================== */
+                case '/exploit-delete':
+                    if ($method !== 'DELETE') { fail(405, 'Use DELETE.'); }
+                    $exploit_id = $_GET['exploit_id'] ?? '';
+                    if (!ctype_digit((string) $exploit_id)) {
+                        fail(422, 'Missing or invalid parameter: exploit_id');
+                    }
+                    $stmt = db()->prepare(
+                        'SELECT id, exploit_id, exploit_type, exploit_content, exploit_source,
+                                date_added, date_modified
+                         FROM tab_exploit
+                         WHERE exploit_id = :exploit_id'
+                    );
+                    $stmt->execute([':exploit_id' => (int) $exploit_id]);
+                    $row = $stmt->fetch();
+                    if ($row === false) { fail(404, 'Unknown exploit_id: ' . $exploit_id); }
+                    db()->prepare('DELETE FROM tab_exploit WHERE exploit_id = :exploit_id')
+                        ->execute([':exploit_id' => (int) $exploit_id]);
+                    json_response(200, ['ok' => true, 'deleted' => $row]);
+                    break;
+
+                /* ========================================================
+                 * DELETE /sample-delete — remove one tab_sample record
+                 * Query: ?id=42 (internal id, shown on the consult page)
+                 * tab_sample has no business identifier, so the internal
+                 * id is the delete key.
+                 * ======================================================== */
+                case '/sample-delete':
+                    if ($method !== 'DELETE') { fail(405, 'Use DELETE.'); }
+                    $sample_id = $_GET['id'] ?? '';
+                    if (!ctype_digit((string) $sample_id)) {
+                        fail(422, 'Missing or invalid parameter: id');
+                    }
+                    $stmt = db()->prepare(
+                        'SELECT id, platform, title, point_of_interest, sample_content,
+                                sample_source, date_added, date_modified
+                         FROM tab_sample
+                         WHERE id = :id'
+                    );
+                    $stmt->execute([':id' => (int) $sample_id]);
+                    $row = $stmt->fetch();
+                    if ($row === false) { fail(404, 'Unknown sample id: ' . $sample_id); }
+                    db()->prepare('DELETE FROM tab_sample WHERE id = :id')
+                        ->execute([':id' => (int) $sample_id]);
+                    json_response(200, ['ok' => true, 'deleted' => $row]);
+                    break;
+
+                /* ========================================================
+                 * DELETE /ioc-delete — remove one tab_ioc record
+                 * Query: ?ioc_id=1
+                 * Deletes only the tab_ioc row; CVE rows pointing to it
+                 * keep their stored ioc_id value.
+                 * ======================================================== */
+                case '/ioc-delete':
+                    if ($method !== 'DELETE') { fail(405, 'Use DELETE.'); }
+                    $ioc_id = $_GET['ioc_id'] ?? '';
+                    if (!ctype_digit((string) $ioc_id)) {
+                        fail(422, 'Missing or invalid parameter: ioc_id');
+                    }
+                    $stmt = db()->prepare(
+                        'SELECT id, ioc_id, ioc_content, date_added, date_modified
+                         FROM tab_ioc
+                         WHERE ioc_id = :ioc_id'
+                    );
+                    $stmt->execute([':ioc_id' => (int) $ioc_id]);
+                    $row = $stmt->fetch();
+                    if ($row === false) { fail(404, 'Unknown ioc_id: ' . $ioc_id); }
+                    db()->prepare('DELETE FROM tab_ioc WHERE ioc_id = :ioc_id')
+                        ->execute([':ioc_id' => (int) $ioc_id]);
+                    json_response(200, ['ok' => true, 'deleted' => $row]);
                     break;
 
                     default:
