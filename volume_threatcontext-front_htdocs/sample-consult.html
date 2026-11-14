@@ -27,8 +27,8 @@
 
     <main class="container">
         <h2>Sample consult</h2>
-        <p class="page-info">Every registered log sample is listed below. Enter a platform to display only its samples.</p>
-        <form class="api-form" data-consult-endpoint="sample-consult" data-record-key="samples" data-load-all="true" data-delete-endpoint="sample-delete" data-delete-param="id">
+        <p class="page-info">Every registered log sample is listed below. Enter a platform to display only its samples. Use Modify to edit a sample, Delete to remove it.</p>
+        <form class="api-form" data-consult-endpoint="sample-consult" data-record-key="samples" data-load-all="true" data-update-endpoint="sample-update" data-delete-endpoint="sample-delete" data-delete-param="id">
             <label for="platform">platform</label>
             <input type="text" id="platform" name="platform" placeholder="linux_x86-64, php" required>
 

@@ -9,9 +9,15 @@
  * Endpoints (path after the host):
  *   POST /cve-entry      -> INSERT INTO tab_cve (new row; a cve_id may
  *                           span several rows, one per linked IoC)
- *   POST /exploit-entry  -> INSERT INTO tab_exploit (existing exploit_id: update)
+ *   POST /exploit-entry  -> INSERT INTO tab_exploit (new row; use
+ *                           /exploit-update to change an existing one)
  *   POST /sample-entry   -> INSERT INTO tab_sample
- *   POST /ioc-entry      -> INSERT INTO tab_ioc (manual ingestion, existing ioc_id: update)
+ *   POST /ioc-entry      -> INSERT INTO tab_ioc (manual ingestion; use
+ *                           /ioc-update to change an existing one)
+ *   POST /cve-update     -> partial UPDATE of one tab_cve row by internal id
+ *   POST /exploit-update -> partial UPDATE of one tab_exploit row by internal id
+ *   POST /sample-update  -> partial UPDATE of one tab_sample row by internal id
+ *   POST /ioc-update     -> partial UPDATE of one tab_ioc row by internal id
  *   POST /ioc-request    -> full pipeline (steps 1-7):
  *                           CVE -> exploit + samples -> RAG build
  *                           -> ThreatContext-llm -> tab_ioc rows + one
@@ -141,6 +147,74 @@ function require_fields(array $data, array $fields): void
     if ($missing) {
         fail(422, 'Missing required field(s): ' . implode(', ', $missing));
     }
+}
+
+/* Internal id of the row to update (?id=...), shared by the
+ * four *-update endpoints. */
+function update_id_param(): int
+{
+    $row_id = $_GET['id'] ?? '';
+    if (!ctype_digit((string) $row_id)) {
+        fail(422, 'Missing or invalid parameter: id');
+    }
+    return (int) $row_id;
+}
+
+/* Partial update helper for the *-update endpoints: builds
+ * "SET col = :col, ..." from the body keys present in $allowed,
+ * adds date_modified = CURRENT_DATE, runs
+ * UPDATE ... WHERE id = :id RETURNING ... and returns the updated
+ * row, or null when no row matches the internal id. */
+function apply_partial_update(string $table, array $allowed, array $data, int $row_id, string $returning): ?array
+{
+    $sets   = [];
+    $params = [':id' => $row_id];
+    foreach ($allowed as $col) {
+        if (!array_key_exists($col, $data)) {
+            continue;                       // partial: absent = unchanged
+        }
+        if ($col === 'exploit_id' || $col === 'ioc_id') {
+            if ($data[$col] !== null && $data[$col] !== ''
+                && !ctype_digit((string) $data[$col])) {
+                fail(422, $col . ' must be a positive integer.');
+            }
+            $params[':' . $col] = ($data[$col] === null || $data[$col] === '')
+                ? 0 : (int) $data[$col];
+        } elseif ($col === 'point_of_interest') {
+            if ($data[$col] !== null && !is_array($data[$col])) {
+                fail(422, 'point_of_interest must be a JSON object.');
+            }
+            $sets[] = 'point_of_interest = CAST(:point_of_interest AS JSONB)';
+            $params[':point_of_interest'] = $data[$col] === null
+                ? null : json_encode($data[$col]);
+            continue;
+        } else {
+            if (!is_string($data[$col]) || $data[$col] === '') {
+                fail(422, $col . ' must be a non-empty string.');
+            }
+            $params[':' . $col] = $data[$col];
+        }
+        $sets[] = $col . ' = :' . $col;
+    }
+    if ($sets === []) {
+        fail(422, 'No updatable field in the request body.');
+    }
+    $sets[] = 'date_modified = CURRENT_DATE';
+    $stmt = db()->prepare(
+        'UPDATE ' . $table . ' SET ' . implode(', ', $sets) . '
+      WHERE id = :id
+  RETURNING ' . $returning
+    );
+    try {
+        $stmt->execute($params);
+    } catch (PDOException $e) {
+        if ($e->getCode() === '22P02') { // invalid text representation (JSONB)
+            fail(422, 'Invalid value for one of the fields.');
+        }
+        fail(500, 'Update failed: ' . $e->getMessage());
+    }
+    $row = $stmt->fetch();
+    return $row === false ? null : $row;
 }
 
 /* Recursively collect every string value of a decoded JSON structure
@@ -282,7 +356,8 @@ switch ($path) {
          * exploit_id is optional: when absent, empty or null the next
          * free value (last stored + 1) is attributed automatically.
          * exploit_source is optional; defaults to 'unprovided' in DB.
-         * An existing exploit_id gets every value replaced (update).
+         * Every submission inserts a new row; /exploit-update changes
+         * an existing one (partial update by internal id).
          * -------------------------------------------------------- */
         case '/exploit-entry':
             if ($method !== 'POST') { fail(405, 'Use POST.'); }
@@ -299,14 +374,6 @@ switch ($path) {
             VALUES (:exploit_id, :exploit_type, :exploit_content, :exploit_source)
             RETURNING id, exploit_id, exploit_type, exploit_source, date_added, date_modified'
             );
-            // Existing exploit_id: replace every value of the stored record.
-            $update = db()->prepare(
-                "UPDATE tab_exploit
-              SET exploit_type = :exploit_type, exploit_content = :exploit_content,
-                  exploit_source = :exploit_source, date_modified = CURRENT_DATE
-            WHERE exploit_id = :exploit_id
-        RETURNING id, exploit_id, exploit_type, exploit_source, date_added, date_modified"
-            );
             $params = [
                 ':exploit_id'      => $exploit_id,
                 ':exploit_type'    => $data['exploit_type'],
@@ -317,10 +384,6 @@ switch ($path) {
                 $insert->execute($params);
                 json_response(201, ['ok' => true, 'created' => $insert->fetch()]);
             } catch (PDOException $e) {
-                if ($e->getCode() === '23505') { // unique_violation -> update
-                    $update->execute($params);
-                    json_response(200, ['ok' => true, 'updated' => $update->fetch()]);
-                }
                 fail(500, 'Insert failed: ' . $e->getMessage());
             }
             break;
@@ -529,7 +592,8 @@ switch ($path) {
                  * ioc_id is optional: when absent, empty or null the next
                  * free value (last stored + 1) is attributed automatically,
                  * exactly like the /ioc-request pipeline does.
-                 * An existing ioc_id gets its values replaced (update).
+                 * Every submission inserts a new row; /ioc-update changes
+                 * an existing one (partial update by internal id).
                  * ioc_type and ioc_content are stored as plain tab_ioc
                  * columns, no JSON encoding involved.
                  * ======================================================== */
@@ -547,14 +611,6 @@ switch ($path) {
                      VALUES (:ioc_id, :ioc_type, :ioc_content)
                      RETURNING id, ioc_id, ioc_type, ioc_content, date_added, date_modified'
                     );
-                    // Existing ioc_id: replace the stored values.
-                    $update = db()->prepare(
-                        'UPDATE tab_ioc
-                      SET ioc_type = :ioc_type, ioc_content = :ioc_content,
-                          date_modified = CURRENT_DATE
-                    WHERE ioc_id = :ioc_id
-                RETURNING id, ioc_id, ioc_type, ioc_content, date_added, date_modified'
-                    );
                     $params = [
                         ':ioc_id'      => $ioc_id,
                         ':ioc_type'    => $data['ioc_type'],
@@ -564,12 +620,79 @@ switch ($path) {
                         $insert->execute($params);
                         json_response(201, ['ok' => true, 'created' => $insert->fetch()]);
                     } catch (PDOException $e) {
-                        if ($e->getCode() === '23505') { // unique_violation -> update
-                            $update->execute($params);
-                            json_response(200, ['ok' => true, 'updated' => $update->fetch()]);
-                        }
                         fail(500, 'Insert failed: ' . $e->getMessage());
                     }
+                    break;
+
+                /* ========================================================
+                 * POST /cve-update — partial update of one tab_cve row
+                 * Query: ?id=42 (internal id, shown on the consult page)
+                 * Body: only the columns to change, e.g.
+                 *   { "platform": "linux_web", "cve_source": "nvd" }
+                 * The internal id and the dates are not writable here.
+                 * ======================================================== */
+                case '/cve-update':
+                    if ($method !== 'POST') { fail(405, 'Use POST.'); }
+                    $row_id = update_id_param();
+                    $data   = get_json_body();
+                    $row = apply_partial_update('tab_cve',
+                        ['cve_id', 'exploit_id', 'ioc_id', 'platform', 'cve_source'],
+                        $data, $row_id,
+                        'id, cve_id, exploit_id, ioc_id, platform, cve_source, date_added, date_modified');
+                    if ($row === null) { fail(404, 'Unknown cve id: ' . $row_id); }
+                    json_response(200, ['ok' => true, 'updated' => $row]);
+                    break;
+
+                /* ========================================================
+                 * POST /exploit-update — partial update of one tab_exploit row
+                 * Query: ?id=42 (internal id, shown on the consult page)
+                 * Body: only the columns to change.
+                 * ======================================================== */
+                case '/exploit-update':
+                    if ($method !== 'POST') { fail(405, 'Use POST.'); }
+                    $row_id = update_id_param();
+                    $data   = get_json_body();
+                    $row = apply_partial_update('tab_exploit',
+                        ['exploit_id', 'exploit_type', 'exploit_content', 'exploit_source'],
+                        $data, $row_id,
+                        'id, exploit_id, exploit_type, exploit_source, date_added, date_modified');
+                    if ($row === null) { fail(404, 'Unknown exploit id: ' . $row_id); }
+                    json_response(200, ['ok' => true, 'updated' => $row]);
+                    break;
+
+                /* ========================================================
+                 * POST /sample-update — partial update of one tab_sample row
+                 * Query: ?id=42 (internal id, shown on the consult page)
+                 * Body: only the columns to change; point_of_interest must
+                 * be a JSON object (or null to clear it).
+                 * ======================================================== */
+                case '/sample-update':
+                    if ($method !== 'POST') { fail(405, 'Use POST.'); }
+                    $row_id = update_id_param();
+                    $data   = get_json_body();
+                    $row = apply_partial_update('tab_sample',
+                        ['platform', 'title', 'point_of_interest', 'sample_content', 'sample_source'],
+                        $data, $row_id,
+                        'id, platform, title, sample_source, date_added, date_modified');
+                    if ($row === null) { fail(404, 'Unknown sample id: ' . $row_id); }
+                    json_response(200, ['ok' => true, 'updated' => $row]);
+                    break;
+
+                /* ========================================================
+                 * POST /ioc-update — partial update of one tab_ioc row
+                 * Query: ?id=42 (internal id, shown on the consult page)
+                 * Body: only the columns to change.
+                 * ======================================================== */
+                case '/ioc-update':
+                    if ($method !== 'POST') { fail(405, 'Use POST.'); }
+                    $row_id = update_id_param();
+                    $data   = get_json_body();
+                    $row = apply_partial_update('tab_ioc',
+                        ['ioc_id', 'ioc_type', 'ioc_content'],
+                        $data, $row_id,
+                        'id, ioc_id, ioc_type, ioc_content, date_added, date_modified');
+                    if ($row === null) { fail(404, 'Unknown ioc id: ' . $row_id); }
+                    json_response(200, ['ok' => true, 'updated' => $row]);
                     break;
 
                 /* ========================================================
