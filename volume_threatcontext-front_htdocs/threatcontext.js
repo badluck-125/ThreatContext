@@ -20,6 +20,9 @@
 
     var API_BASE = '/api/index.php/';
 
+    /* Columns never editable through the modify form. */
+    var READONLY_FIELDS = ['id', 'date_added', 'date_modified'];
+
     function $(id) { return document.getElementById(id); }
 
     function setStatus(el, text, kind) {
@@ -172,6 +175,116 @@
             return btn;
         }
 
+        /* Modify button rendered with each record when the form
+         * declares data-update-endpoint. First click turns the
+         * record table into an editable form (current values as
+         * defaults); the next click on the same button validates
+         * and POSTs only the changed fields to the update endpoint
+         * (internal id sent as ?id=). */
+        function modifyButton(rec, item) {
+            var btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'modify-button';
+            btn.textContent = 'Modify';
+            var editing = false;
+
+            btn.addEventListener('click', function () {
+                if (!editing) {
+                    var table = item.querySelector('table.record-table');
+                    if (table) { item.replaceChild(editForm(rec), table); }
+                    editing = true;
+                    btn.textContent = 'Validate';
+                    return;
+                }
+
+                /* Validate: send only the fields the user changed. */
+                var payload = {};
+                var problem = '';
+                item.querySelectorAll('[data-field]').forEach(function (field) {
+                    if (problem) { return; }
+                    if (field.value === field.dataset.original) { return; }
+                    var key = field.dataset.field;
+                    if (key === 'exploit_id' || key === 'ioc_id') {
+                        var n = parseInt(field.value, 10);
+                        if (isNaN(n) || String(n) !== field.value.trim()) {
+                            problem = key + ' must be an integer.';
+                            return;
+                        }
+                        payload[key] = n;
+                    } else if (key === 'point_of_interest') {
+                        try {
+                            payload[key] = field.value.trim() === ''
+                                ? null : JSON.parse(field.value);
+                        } catch (err) {
+                            problem = 'point_of_interest is not valid JSON: ' + err.message;
+                        }
+                    } else {
+                        payload[key] = field.value;
+                    }
+                });
+                if (problem) { setStatus(status, problem, 'error'); return; }
+                if (Object.keys(payload).length === 0) {
+                    setStatus(status, 'No change to save.', '');
+                    return;
+                }
+
+                setStatus(status, 'Saving...', '');
+                btn.disabled = true;
+                api(form.dataset.updateEndpoint + '?id=' + encodeURIComponent(rec.id), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                }).then(function (r) {
+                    if (!r.ok) {
+                        setStatus(status, 'Update failed (HTTP ' + r.status + ')', 'error');
+                        result.innerHTML = '';
+                        result.appendChild(jsonBox(r.data));
+                        btn.disabled = false;
+                        return;
+                    }
+                    setStatus(status, 'Updated (HTTP ' + r.status + ')', 'success');
+                    run(lastQuery);          // refresh the current view
+                }).catch(function (err) {
+                    setStatus(status, 'Could not reach the application tier: ' + err.message, 'error');
+                    btn.disabled = false;
+                });
+            });
+            return btn;
+        }
+
+        /* Editable copy of a record: every data column becomes an
+         * input pre-filled with the current value. The internal id
+         * and the dates stay read-only. */
+        function editForm(rec) {
+            var box = document.createElement('div');
+            box.className = 'edit-form';
+            Object.keys(rec).forEach(function (key) {
+                if (READONLY_FIELDS.indexOf(key) !== -1) { return; }
+                var value = rec[key];
+                var isJson = value !== null && typeof value === 'object';
+                var text = isJson
+                    ? JSON.stringify(value, null, 2)
+                    : (value === null || value === undefined ? '' : String(value));
+
+                var label = document.createElement('label');
+                label.textContent = key;
+                var field;
+                if (isJson || text.length > 120 || text.indexOf('\n') !== -1) {
+                    field = document.createElement('textarea');
+                    field.rows = isJson ? 6 : 3;
+                } else {
+                    field = document.createElement('input');
+                    field.type = 'text';
+                }
+                field.value = text;
+                field.dataset.field = key;
+                field.dataset.original = text;
+                label.appendChild(field);
+                box.appendChild(label);
+            });
+            return box;
+        }
+
         /* One search = one GET on the consult endpoint. With a query
          * it narrows to the requested reference; without a query the
          * endpoint returns every record of the linked table. */
@@ -202,6 +315,9 @@
                     var item = document.createElement('div');
                     item.className = 'record-item';
                     item.appendChild(recordTable(rec));
+                    if (form.dataset.updateEndpoint) {
+                        item.appendChild(modifyButton(rec, item));
+                    }
                     if (form.dataset.deleteEndpoint) {
                         item.appendChild(deleteButton(rec));
                     }
