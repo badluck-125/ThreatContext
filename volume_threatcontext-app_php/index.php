@@ -513,6 +513,12 @@ switch ($path) {
                         'sample'           => $sample_blobs,
                     ];
 
+                    // ---- Log the rag request in file ----
+                    //file_put_contents('/var/www/logs/rag_request.log', $rag_request, FILE_APPEND | LOCK_EX);
+                    $out = fopen('php://stdout', 'w');
+                    fputs($out, json_encode($rag_request));
+                    fclose($out);
+
                     // ---- Steps 5 + 6: send to ThreatContext-llm, retrieve answer ----
                     $ioc_found = llm_ioc_guess($rag_request);
 

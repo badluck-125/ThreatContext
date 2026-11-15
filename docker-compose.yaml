@@ -23,6 +23,8 @@ services:
             - "8090:80"
         volumes:
             - ./volume_threatcontext-app_php:/var/www/html
+            - ./volume_threatcontext-app_logs:/var/www/logs
+            - ./folder_threatcontext-app/threatcontext-logging.ini:/usr/local/etc/php/conf.d/threatcontext-logging.ini:ro
         networks:
             - threatcontextLan
 
