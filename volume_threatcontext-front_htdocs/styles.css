@@ -249,3 +249,17 @@ h2 {
 }
 
 .site-footer a { color: var(--bronze); }
+
+/* ---- summary page ---- */
+
+.summary-title {
+    margin: 18px 0 6px;
+    font-size: 18px;
+    color: var(--rusty-spice);
+}
+
+.summary-empty {
+    font-style: italic;
+    color: #777;
+    margin: 4px 0;
+}

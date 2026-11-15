@@ -348,8 +348,143 @@
         }
     }
 
+    /* ---- summary page ---- */
+
+    /* Summary form (data-summary="true"): one cve_id in, a digest of
+     * tab_cve, tab_exploit, tab_sample and tab_ioc out. Assembled
+     * purely from the existing consult endpoints, no dedicated API:
+     *   - cve-consult?cve_id=...        -> every tab_cve row
+     *   - exploit-consult?exploit_id=... -> once per unique exploit_id
+     *   - sample-consult?platform=...   -> once per unique platform
+     *   - ioc-consult?ioc_id=...        -> one block per cve_id/ioc_id
+     *                                      couple (every tab_cve row) */
+    function pick(record, fields) {
+        var out = {};
+        fields.forEach(function (f) { out[f] = record[f]; });
+        return out;
+    }
+
+    function sectionTitle(text) {
+        var h = document.createElement('h3');
+        h.className = 'summary-title';
+        h.textContent = text;
+        return h;
+    }
+
+    function summaryBlock(records, fields, emptyText) {
+        var box = document.createElement('div');
+        box.className = 'summary-section';
+        if (records.length === 0) {
+            var p = document.createElement('p');
+            p.className = 'summary-empty';
+            p.textContent = emptyText;
+            box.appendChild(p);
+            return box;
+        }
+        records.forEach(function (rec) {
+            var item = document.createElement('div');
+            item.className = 'record-item';
+            item.appendChild(recordTable(pick(rec, fields)));
+            box.appendChild(item);
+        });
+        return box;
+    }
+
+    function wireSummaryForm(form) {
+        var status = $('status-message');
+        var result = $('result');
+        var button = form.querySelector('button[type="submit"]');
+
+        form.addEventListener('submit', function (e) {
+            e.preventDefault();
+            result.innerHTML = '';
+            var cve_id = form.querySelector('[name="cve_id"]').value.trim();
+            if (cve_id === '') { setStatus(status, 'Enter a cve_id.', 'error'); return; }
+
+            setStatus(status, 'Loading summary...', '');
+            button.disabled = true;
+
+            api('cve-consult?cve_id=' + encodeURIComponent(cve_id), { method: 'GET' })
+                .then(function (r) {
+                    if (!r.ok) {
+                        setStatus(status, 'Error (HTTP ' + r.status + ')', 'error');
+                        result.appendChild(jsonBox(r.data));
+                        return;
+                    }
+                    var rows = r.data.cve || [];
+
+                    // Unique references across all tab_cve rows.
+                    var exploitIds = [], platforms = [], iocIds = [];
+                    rows.forEach(function (row) {
+                        if (row.exploit_id && exploitIds.indexOf(row.exploit_id) === -1) { exploitIds.push(row.exploit_id); }
+                        if (row.platform && platforms.indexOf(row.platform) === -1) { platforms.push(row.platform); }
+                        if (row.ioc_id && iocIds.indexOf(row.ioc_id) === -1) { iocIds.push(row.ioc_id); }
+                    });
+
+                    // One GET per reference; a missing linked record or a
+                    // network hiccup on one call never breaks the page,
+                    // the section just shows fewer blocks.
+                    var calls = [];
+                    exploitIds.forEach(function (id) {
+                        calls.push(
+                            api('exploit-consult?exploit_id=' + encodeURIComponent(id), { method: 'GET' })
+                                .then(function (r) { return r.ok ? [r.data.exploit] : []; })
+                                .catch(function () { return []; })
+                        );
+                    });
+                    platforms.forEach(function (p) {
+                        calls.push(
+                            api('sample-consult?platform=' + encodeURIComponent(p), { method: 'GET' })
+                                .then(function (r) { return r.ok ? (r.data.samples || []) : []; })
+                                .catch(function () { return []; })
+                        );
+                    });
+                    iocIds.forEach(function (id) {
+                        calls.push(
+                            api('ioc-consult?ioc_id=' + encodeURIComponent(id), { method: 'GET' })
+                                .then(function (r) { return r.ok ? [r.data.ioc] : []; })
+                                .catch(function () { return []; })
+                        );
+                    });
+
+                    return Promise.all(calls).then(function (groups) {
+                        var nExp = exploitIds.length, nSmp = platforms.length;
+                        var merge = function (list) {
+                            return list.reduce(function (acc, g) { return acc.concat(g); }, []);
+                        };
+                        var exploits = merge(groups.slice(0, nExp));
+                        var samples  = merge(groups.slice(nExp, nExp + nSmp));
+                        var iocs     = merge(groups.slice(nExp + nSmp));
+
+                        setStatus(status, 'Summary for ' + cve_id + ' (HTTP ' + r.status + ')', 'success');
+                        result.appendChild(sectionTitle('CVE'));
+                        result.appendChild(summaryBlock(rows, ['cve_id'], ''));
+                        result.appendChild(sectionTitle('Exploit'));
+                        result.appendChild(summaryBlock(exploits,
+                            ['exploit_id', 'exploit_type', 'exploit_source'],
+                            'No exploit linked to ' + cve_id + '.'));
+                        result.appendChild(sectionTitle('Samples'));
+                        result.appendChild(summaryBlock(samples,
+                            ['platform', 'title', 'sample_source'],
+                            'No sample stored for the platform(s) of ' + cve_id + '.'));
+                        result.appendChild(sectionTitle('IoC'));
+                        result.appendChild(summaryBlock(iocs,
+                            ['ioc_id', 'ioc_type', 'ioc_content'],
+                            'No IoC linked to ' + cve_id + '.'));
+                    });
+                })
+                .catch(function (err) {
+                    setStatus(status, 'Could not reach the application tier: ' + err.message, 'error');
+                })
+                .finally(function () {
+                    button.disabled = false;
+                });
+        });
+    }
+
     document.addEventListener('DOMContentLoaded', function () {
         document.querySelectorAll('form[data-entry-endpoint]').forEach(wireEntryForm);
         document.querySelectorAll('form[data-consult-endpoint]').forEach(wireConsultForm);
+        document.querySelectorAll('form[data-summary]').forEach(wireSummaryForm);
     });
 })();
