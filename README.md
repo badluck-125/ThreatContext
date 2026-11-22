@@ -1,4 +1,6 @@
-# ThreatContext
+
+
+![Load Threat context logo](logo_threatcontext_writtings.svg "ThreatContext")
 
 ## Installation
 
@@ -47,9 +49,10 @@ You can interact with the application with the application tier API endpoint.
 
 ## Roadmap
 Things to add to ThreatContext
-1. LLM_tier tunning, addition of setting in the Modelfile
-2. Create an input script for the [vulnerability-poc](https://github.com/fankh/vulnerability-poc) repo
-3. Create an input script for a set of sample
-4. Improve data categorization to enhance application tier flexibility
-5. Hardenning: Add API token authentication/right
-6. Hardenning: Add a session features for the presentation tier
+1. Create an input script for the [vulnerability-poc](https://github.com/fankh/vulnerability-poc) repo
+2. Create an input script for a set of sample
+3. Improve data categorization to enhance application tier flexibility
+4. Transform database schema to be STIX 2.X compliant
+5. Add a TAXII server on the application tier to transport STIX data
+6. Hardenning: Add API token authentication/right
+7. Hardenning: Add a session features for the presentation tier

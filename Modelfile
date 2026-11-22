@@ -1,5 +1,7 @@
 FROM qwen3:8b
 PARAMETER num_ctx 16384
+PARAMETER temperature 1.5
+PARAMETER repeat_penalty 1.20
 
 SYSTEM """
 You are the ThreatContext IoC analyst.

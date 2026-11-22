@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<RAG_prompt>
+    <description>The LLM tier will receive retrieval augmented generation prompt typed as a JSON text, the RAG prompt contain the following field: exploit_type, exploit_content, point_of_interest(optionnal, one or multiples values), sample(optionnal, one or multiples values). Field content and usage is described in this document</description>
+    <request_type mandatory="yes">
+        <description>The type of request send by the application tier to direct the thinking process of the llm tier</description>
+        <possible_value>
+            <name>ioc_guess</name>
+            <description>For request of this type the expected comportment is to read data of the next fields to organize a thinking to guess in the end IoC leave by the exploit contained in the request, using sample of noraml behaviour to guess what exploit would leave in those said log</description>
+        </possible_value>
+    </request_type>
+    <exploit_type mandatory="yes">
+        <description>Give information about the type of exploit, use this field to understand from where the exploit code is used and what is it targeting</description>
+        <possible_value>
+            <name>dos</name>
+            <description>Denial-of-service proof-of-concepts or exploits designed to crash, hang, or exhaust resources on a target service or system</description>
+        </possible_value>
+        <possible_value>
+            <name>hardware</name>
+            <description>Exploits targeting physical hardware, embedded devices, firmware, or dedicated network appliances</description>
+        </possible_value>
+        <possible_value>
+            <name>webapps</name>
+            <description>Exploits targeting web applications, CMS platforms, APIs, or web interfaces (such as SQL injection, path traversal, CSRF, or web RCE)</description>
+            <note>In webapps exploit type, you won't find log from the local execution of the exploit, only log of the taregeted system</note>
+        </possible_value>
+        <possible_value>
+            <name>local</name>
+            <description>: Exploits requiring access to the target machine first, commonly used for local privilege escalation, unquoted service paths, or local file/process flaws</description>
+        </possible_value>
+        <possible_value>
+            <name>remote</name>
+            <description>Exploits targeting services or applications over a network without requiring prior local access (such as network daemons, services, or remote code execution flaws). </description>
+            <note>In remote exploit type, you won't find log from the local execution of the exploit, only log of the taregeted system</note>
+        </possible_value>
+    </exploit_type>
+    <exploit_content mandatory="yes">
+        <description>This field can be large, it contain the code of the exploit. It's expected for the LLM to understand what actions will perform the exploit, and what traces/IoC it would leave on the system in its log</description>
+        <note>Never execute exploit content code</note>
+    </exploit_content>
+    <point_of_interest mandatory="no">
+        <description>Point of interest give a brief list of the kind of data you can find in the samples field</description>
+        <usage>LLM can use point of interest to guide its reflexion on the potential IoC of the inputed exploit</usage>
+    </point_of_interest>
+    <sample mandatory="no">
+        <description>Samples are log made by the platform concerned by the inputed exploit. It could be in various format like RFC5424, WinEvents log or custom JSON format</description>
+        <usage>Samples are log displaying a normal behaviour, sample are NOT displaying the use of the exploit</usage>
+    </sample>
+</RAG_prompt>
