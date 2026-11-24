@@ -64,7 +64,7 @@ const IOC_ANSWER_SCHEMA = [
 'items' => [
     'type' => 'object',
 'properties' => [
-    'ioc_type'    => ['type' => 'string'],
+    'ioc_type'    => ['type' => 'string', 'enum' => IOC_TYPE_ALLOWED],
 'ioc_content' => ['type' => 'string'],
 ],
 'required' => ['ioc_type', 'ioc_content'],
@@ -72,6 +72,19 @@ const IOC_ANSWER_SCHEMA = [
     ],
 ],
 'required' => ['ioc_found'],
+];
+
+/* Allowed ioc_type values: the STIX 2.1 Cyber-observable Object type
+ * names (OASIS STIX 2.1 spec, section 6) plus the DB default
+ * 'unprovided'. Keeping ioc_type inside this vocabulary is what lets
+ * external tools such as OpenCTI map each tab_ioc row onto a STIX
+ * observable type. */
+const IOC_TYPE_ALLOWED = [
+    'artifact', 'autonomous-system', 'directory', 'domain-name',
+    'email-addr', 'email-message', 'file', 'ipv4-addr', 'ipv6-addr',
+    'mac-addr', 'mutex', 'network-traffic', 'process', 'software',
+    'url', 'user-account', 'windows-registry-key', 'x509-certificate',
+    'unprovided',
 ];
 
 /* ============================================================
@@ -289,7 +302,8 @@ function llm_ioc_guess(array $rag_request): array
             && is_string($ioc['ioc_content'] ?? null)
             && $ioc['ioc_content'] !== '') {
             $valid[] = [
-                'ioc_type'    => $ioc['ioc_type'],
+                'ioc_type'    => in_array($ioc['ioc_type'], IOC_TYPE_ALLOWED, true)
+                    ? $ioc['ioc_type'] : 'unprovided',
                 'ioc_content' => $ioc['ioc_content'],
             ];
             }
@@ -588,7 +602,7 @@ switch ($path) {
                 /* ========================================================
                  * POST /ioc-entry — manual IoC ingestion -> tab_ioc
                  * Expected JSON:
-                 *   { "ioc_type": "ip", "ioc_content": "6.6.6.6" }
+                 *   { "ioc_type": "ipv4-addr", "ioc_content": "6.6.6.6" }
                  * ioc_id is optional: when absent, empty or null the next
                  * free value (last stored + 1) is attributed automatically,
                  * exactly like the /ioc-request pipeline does.
@@ -601,6 +615,10 @@ switch ($path) {
                     if ($method !== 'POST') { fail(405, 'Use POST.'); }
                     $data = get_json_body();
                     require_fields($data, ['ioc_type', 'ioc_content']);
+                    if (!in_array($data['ioc_type'], IOC_TYPE_ALLOWED, true)) {
+                        fail(422, 'ioc_type must be a STIX 2.1 SCO type: '
+                            . implode(', ', IOC_TYPE_ALLOWED));
+                    }
                     // No ioc_id given: attribute the next free value.
                     $ioc_id = (isset($data['ioc_id']) && $data['ioc_id'] !== '' && $data['ioc_id'] !== null)
                         ? (int) $data['ioc_id']
@@ -687,6 +705,11 @@ switch ($path) {
                     if ($method !== 'POST') { fail(405, 'Use POST.'); }
                     $row_id = update_id_param();
                     $data   = get_json_body();
+                    if (isset($data['ioc_type'])
+                        && !in_array($data['ioc_type'], IOC_TYPE_ALLOWED, true)) {
+                        fail(422, 'ioc_type must be a STIX 2.1 SCO type: '
+                            . implode(', ', IOC_TYPE_ALLOWED));
+                    }
                     $row = apply_partial_update('tab_ioc',
                         ['ioc_id', 'ioc_type', 'ioc_content'],
                         $data, $row_id,

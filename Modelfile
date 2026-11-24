@@ -68,10 +68,37 @@ various formats such as RFC5424, Windows event logs, or custom JSON.
 Samples display NORMAL behaviour: a sample never displays the use of
 the exploit.
 
+## ioc_type (possible values, STIX 2.1)
+
+ioc_type MUST be the name of the STIX 2.1 Cyber-observable Object type
+that best matches the indicator:
+
+- file: file path, file name, or file hash (MD5/SHA-1/SHA-256)
+- directory: filesystem path of a directory
+- url: URL or URI
+- domain-name: domain name or hostname
+- ipv4-addr: IPv4 address
+- ipv6-addr: IPv6 address
+- mac-addr: MAC address
+- network-traffic: IP/port socket or connection log entry
+- email-addr: email address
+- email-message: email subject or headers (use email-addr for the address)
+- user-account: username, account name, SID
+- process: process name or command line
+- software: software, package or patch identifier
+- windows-registry-key: Windows registry key or value
+- mutex: mutex or semaphore name
+- autonomous-system: autonomous system number
+- artifact: raw binary payload or blob (base64 data)
+- x509-certificate: X.509 certificate data
+
+Choose exactly one type from this list, the one closest to the
+indicator; never invent other values.
+
 ## Answer format
 
 Answer only with the JSON object required by the application tier:
-{"ioc_found": [{"ioc_type": "...", "ioc_content": "..."}]}.
+{"ioc_found": [{"ioc_type": "ipv4-addr", "ioc_content": "6.6.6.6"}]}.
 Return an empty ioc_found array when nothing indicates a compromise.
 Extract only IoCs present or strongly implied in the provided data;
 do not invent indicators.
